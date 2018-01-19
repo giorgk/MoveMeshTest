@@ -43,6 +43,15 @@ public:
      */
     bool compare(double z, double thres);
 
+    //! Attempts to add connection to this point. If the connection already exists
+    //! nothing is added
+    void Add_connections(std::map<int,std::pair<int,int> > conn);
+
+    //! You should call this only after this point has at least z info and level assigned
+    //! from a previous iteration.
+    //! A typical case would be after resetting the mesh structure
+    void update_main_info(Zinfo newZ);
+
 //    //! Copies the zinfo of the vertex to this vertex. The operation does that blindly
 //    //! without checking if the input values make sense.
     //void copy(Zinfo zinfo);
@@ -114,10 +123,27 @@ Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::map<int,st
     connected_above = false;
     connected_below = false;
 
-    std::map<int,std::pair<int,int> >::iterator it;
-    for (it = conn.begin(); it != conn.end(); ++it){
-        dof_conn.insert(std::pair<int,std::pair<int,int>>(it->first, it->second));
+    Add_connections(conn);
+}
+
+void Zinfo::update_main_info(Zinfo newZ){
+    if (newZ.dof <0)
+        std::cerr << "The new dof id cannot be negative" << std::endl;
+    if (dof >= 0){
+        if (dof != newZ.dof){
+            std::cerr << " You attempt to update on a point that has already dof\n"
+                      <<  "However the updated dof is different from the current dof" << std::endl;
+        }
     }
+    dof = newZ.dof;
+    hanging = newZ.hanging;
+    Add_connections(newZ.dof_conn);
+}
+
+void Zinfo::Add_connections(std::map<int,std::pair<int,int> > conn){
+    std::map<int,std::pair<int,int> >::iterator it;
+    for (it = conn.begin(); it != conn.end(); ++it)
+        dof_conn.insert(std::pair<int,std::pair<int,int>>(it->first, it->second));
 }
 
 

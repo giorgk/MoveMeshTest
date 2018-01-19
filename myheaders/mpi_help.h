@@ -22,11 +22,11 @@ void Send_receive_size(unsigned int N, unsigned int n_proc, std::vector<int> &ou
 
         MPI_Allgatherv(&N, // This is what this processor will send to every other
                        1, //This is the size of the message from this processor
-                       MPI::INT, // The data type will be sent
+                       MPI_INT, // The data type will be sent
                        &output[0], // This is where the data will be send on each processor
                        &temp[0], // an array with the number of points to be sent/receive
                        &displs[0],
-                       MPI::INT, comm);
+                       MPI_INT, comm);
 }
 
 /*!

@@ -115,9 +115,7 @@ void PntsInfo<dim>::add_Zcoord(Zinfo zinfo, double thres){
     std::vector<Zinfo >::iterator it = check_if_z_exists(zinfo, thres);
     if (it != Zlist.end()){
         // SHOULD WE UPDATE ALL THE INFO OR SOME OF IT OR NONE?????????
-        it->dof = zinfo.dof;
-        it->level = zinfo.level;
-        it->hanging = zinfo.hanging;
+        it->update_main_info(zinfo);
     }
     else{
         Zlist.push_back(zinfo);

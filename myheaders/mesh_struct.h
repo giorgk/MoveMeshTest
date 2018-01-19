@@ -344,50 +344,30 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                                                               curr_cell_info[id_conn[i]].hang)));
                 }
 
-                // find if we have already check this point
-                itint = dof_local.find(it->first);
-                if (itint != dof_local.end()){
-                    // if we have already find this point on a previous cell add the new points
-                    // that this point is connecected to
-                }else{
+                // Now create a zinfo variable
+                Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, connectedNodes);
+                // and a point
+                Point<dim-1> ptemp;
+                for (unsigned int d = 0; d < dim-1; ++d)
+                    ptemp[d] = it->second.pnt[d];
 
-                    //we add a new point in the structure
-                    Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, connectedNodes);
-
+                // Try to add it in the structure
+                PntIndices id_in_map = add_new_point(ptemp, zinfo);
+                if (id_in_map.XYind < 0)
+                    std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
+                else{
+                    bool tf = any_ghost_neighbor<dim>(cell);
+                    if (tf)
+                        PointsMap[id_in_map.XYind].have_to_send = 1;
                 }
             }
-
-
-//            // find if we have already check this point
-//            itint = dof_local.find(current_dofs[dim-1]);
-//            if (itint != dof_local.end()){
-//                // MAYBE THATS NOT NEEDED
-//                // if the point is already inside the map we just need to check if this cell
-//                // has any ghost neighbors. If yes then we flag the XY location for sharing.
-//                // We do that of we have not set the sharing flag before
-//            }else{
-//                // we have to add this point to the structure.
-//                Zinfo zinfo(current_node[dim-1], current_dofs[dim-1], cell->level(),
-//                        mesh_constraints.is_constrained(current_dofs[dim-1]));
-//                // ADD THE CODE ABOUT THE BOUNDARY INFO
-
-//                Point<dim-1> ptemp;
-//                for (unsigned int d = 0; d < dim-1; ++d)
-//                    ptemp[d] = current_node[d];
-
-//                int id_in_map = add_new_point(ptemp, zinfo);
-//                if (id_in_map < 0)
-//                    std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
-//                else{
-//                    bool tf = any_ghost_neighbor<dim>(cell);
-//                    if (tf)
-//                        PointsMap[id_in_map].have_to_send = 1;
-//                }
-//                dof_local[current_dofs[dim-1]] = id_in_map;
-//            }
+            pcout << "----------------------------------------------------------------" << std::endl;
         }
-        pcout << "----------------------------------------------------------------" << std::endl;
     }
+
+    make_dof_ij_map();
+
+
 
     MPI_Barrier(mpi_communicator);
     distributed_mesh_vertices.compress(VectorOperation::insert);
@@ -497,8 +477,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         MPI_Barrier(mpi_communicator);
     }//if (n_proc > 1)
 
-    set_id_above_below();
-    dbg_meshStructInfo3D("After3D", my_rank);
+    //set_id_above_below();
+    //dbg_meshStructInfo3D("After3D", my_rank);
 
 
 
@@ -559,11 +539,16 @@ void Mesh_struct<dim>::dbg_meshStructInfo2D(std::string filename, unsigned int m
 
 template <int dim>
 void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int my_rank){
-    const std::string log_file_name = (filename + "_" +
+    const std::string log_file_name = (filename + "_pnt_" +
                                        Utilities::int_to_string(my_rank+1, 4) +
                                        ".txt");
      std::ofstream log_file;
      log_file.open(log_file_name.c_str());
+
+     std::map<std::pair<int,int>, int> line_map;
+     std::pair<std::map<std::pair<int,int>,int>::iterator,bool> ret;
+     int counter = 0;
+
      typename std::map<int , PntsInfo<dim> >::iterator it;
      for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
          std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
@@ -590,9 +575,42 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                       << std::setw(15) << it->second.B << ", "
                       << std::setw(5) << it->second.have_to_send
                       << std::endl;
+
+
+             std::map<int,std::pair<int,int> >::iterator itt;
+             for (itt = itz->dof_conn.begin(); itt != itz->dof_conn.end(); ++itt){
+                 int a,b;
+                 if (itz->dof < itt->first){
+                     a = itz->dof;
+                     b = itt->first;
+                 }
+                 else{
+                     a = itt->first;
+                     b = itz->dof;
+                 }
+                 ret = line_map.insert(std::pair<std::pair<int,int>,int>(std::pair<int,int>(a,b),counter));
+                 if (ret.second == true)
+                    counter++;
+             }
          }
      }
      log_file.close();
+
+     // Print the lines hopefully these are unique
+
+     const std::string log_file_name1 = (filename + "_lns_" +
+                                        Utilities::int_to_string(my_rank+1, 4) +
+                                        ".txt");
+     std::ofstream log_file1;
+     log_file1.open(log_file_name1.c_str());
+
+     std::map<int,std::pair<int,int> >::iterator it_dof;
+     std::map<std::pair<int,int>, int>::iterator itl;
+     for (itl = line_map.begin(); itl!=line_map.end(); ++itl){
+            it_dof = dof_ij.find(itl->first.first);
+
+     }
+
 }
 
 template <int dim>
