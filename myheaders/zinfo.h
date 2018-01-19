@@ -4,15 +4,19 @@
 #include <iostream>
 #include <ostream>
 #include <cmath>
+#include <map>
+
 
 template<class T>
 bool sort_Zlist(const T A, T B){ return (A.z < B.z); }
+
 
 
 /*!
  * \brief The Zinfo class contains information regarding the z elevation of a
  * mesh node and how this node is  connected in the mesh.
  */
+
 class Zinfo{
 public:
     /*!
@@ -22,7 +26,11 @@ public:
      * \param level is the level of the node
      * \param constr is true if its a hanging node
      */
-    Zinfo(double z, int dof, int level, bool constr);
+    Zinfo(double z, int dof, int level, bool constr, std::map<int,std::pair<int,int> > dof_conn);
+
+    //! This is a map that holds the dofs of the triangulation points as key,
+    //! and the level,hangin flag as pair of integers of the points that this is connected with.
+    std::map<int,std::pair<int,int> > dof_conn;
 
     //! prints all the information of this vertex
     void print_me(std::ostream& stream);
@@ -82,7 +90,7 @@ public:
     bool connected_below;
 };
 
-Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr){
+Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::map<int,std::pair<int,int> > conn){
     // To construct a new point we need to know the elevation,
     // the dof, the level and whether is a hanging node.
     if (dof_in <0)
@@ -105,7 +113,13 @@ Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr){
     rel_pos = -9.0;
     connected_above = false;
     connected_below = false;
+
+    std::map<int,std::pair<int,int> >::iterator it;
+    for (it = conn.begin(); it != conn.end(); ++it){
+        dof_conn.insert(std::pair<int,std::pair<int,int>>(it->first, it->second));
+    }
 }
+
 
 bool Zinfo::compare(double z_in, double thres){
     return (std::abs(z_in - z) < thres);
@@ -125,6 +139,7 @@ bool Zinfo::compare(double z_in, double thres){
 //    rel_pos     =   zinfo.rel_pos;
 //    z           =   zinfo.z;
 //}
+
 
 void Zinfo::reset(){
     // when we reset a point we change all values to dummy ones except

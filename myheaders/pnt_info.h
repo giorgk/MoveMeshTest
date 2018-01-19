@@ -9,6 +9,7 @@
 
 using namespace dealii;
 
+
 template <int dim>
 class PntsInfo{
 public:
@@ -41,7 +42,7 @@ public:
     Point<dim-1> PNT;
 
     //! an array with z coordinate with the same X and y
-    std::vector<Zinfo> Zlist;
+    std::vector<Zinfo > Zlist;
 
     //! The top elevation of the aquifer at the x-y point
     double T;
@@ -111,7 +112,7 @@ void PntsInfo<dim>::add_Zcoord(Zinfo zinfo, double thres){
     if (zinfo.dof < 0){
         std::cerr << "You attempt to add a vertex with negative dof" << std::endl;
     }
-    std::vector<Zinfo>::iterator it = check_if_z_exists(zinfo, thres);
+    std::vector<Zinfo >::iterator it = check_if_z_exists(zinfo, thres);
     if (it != Zlist.end()){
         // SHOULD WE UPDATE ALL THE INFO OR SOME OF IT OR NONE?????????
         it->dof = zinfo.dof;
@@ -126,7 +127,7 @@ void PntsInfo<dim>::add_Zcoord(Zinfo zinfo, double thres){
 
 template<int dim>
 std::vector<Zinfo>::iterator PntsInfo<dim>::check_if_z_exists(Zinfo zinfo, double thres){
-    std::vector<Zinfo>::iterator it;
+    typename std::vector<Zinfo>::iterator it;
     for (it = Zlist.begin(); it != Zlist.end(); ++it){
         if (abs(it->z - zinfo.z) < thres){
             return it;
@@ -145,7 +146,7 @@ void PntsInfo<dim>::reset(){
     have_to_send = 0;
     T = -9999.0;
     B = -9999.0;
-    std::vector<Zinfo>::iterator it = Zlist.begin();
+    typename std::vector<Zinfo>::iterator it = Zlist.begin();
     for (; it != Zlist.end(); ++it)
         it->reset();
 }
@@ -153,7 +154,7 @@ void PntsInfo<dim>::reset(){
 template <int dim>
 int PntsInfo<dim>::number_of_positive_dofs(){
     int N_dofs = 0;
-    std::vector<Zinfo>::iterator it = Zlist.begin();
+    typename std::vector<Zinfo>::iterator it = Zlist.begin();
     for (; it != Zlist.end(); ++it){
         if (it->dof >= 0)
             N_dofs++;

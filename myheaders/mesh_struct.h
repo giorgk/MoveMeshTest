@@ -15,6 +15,25 @@
 #include "cgal_functions.h"
 #include "my_functions.h"
 #include "mpi_help.h"
+#include "helper_functions.h"
+
+//! custom struct to hold data
+template <int dim>
+struct trianode {
+    Point <dim> pnt;
+    int dof;
+    int level;
+    int hang;
+    int spi; // support_point_index
+    std::map<int,int> c_pnt;// dofs of points connected to that node
+};
+
+
+struct PntIndices{
+    int XYind;
+    int Zind;
+};
+
 
 //! Returns true if any neighbor element is ghost
 template <int dim>
@@ -82,7 +101,7 @@ public:
 
     //! Adds a new point in the structure. If the point exists adds the z coordinate only and returns
     //! the id of the existing point. if the point doesnt exist creates a new point and returns the new id.
-    int add_new_point(Point<dim-1>, Zinfo zinfo);
+    PntIndices add_new_point(Point<dim-1>, Zinfo zinfo);
 
     //! Checks if the point already exists in the mesh structure
     //! If the point exists it returns the id of the point in the #CGALset
@@ -155,8 +174,10 @@ Mesh_struct<dim>::Mesh_struct(double xy_thr, double z_thr){
 }
 
 template <int dim>
-int Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
-    int outcome = -99;
+PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
+    PntIndices outcome;
+    outcome.XYind = -99;
+    outcome.Zind = -99;
 
     // First search for the XY location in the structure
     int id = check_if_point_exists(p);
@@ -177,12 +198,12 @@ int Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
         }
         pair_point_id.push_back(std::make_pair(ine_Point2(x, y), _counter));
         CGALset.insert(pair_point_id.begin(), pair_point_id.end());
-        outcome = _counter;
+        outcome.XYind = _counter;
         _counter++;
     }else if (id >=0){
         typename std::map<int, PntsInfo<dim> >::iterator it = PointsMap.find(id);
         it->second.add_Zcoord(zinfo, z_thres);
-        outcome = it->first;
+        outcome.XYind = it->first;
     }
 
     return outcome;
@@ -273,10 +294,17 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         if (cell->is_locally_owned()){
             fe_mesh_points.reinit(cell);
             cell->get_dof_indices (cell_dof_indices);
+            // First we will loop through the cell dofs gathering all info we need for the points
+            // and then we will loop again though the points to add the into the structure.
+            // Therefore we would need to initialize several vectors
+            std::map<int, trianode<dim> > curr_cell_info;
+
+
             for (unsigned int idof = 0; idof < mesh_fe.base_element(0).dofs_per_cell; ++idof){
                 // for each dof of this cell we extract the coordinates and the dofs
                 Point <dim> current_node;
                 std::vector<int> current_dofs(dim);
+                std::vector<unsigned int> spi;
                 for (unsigned int dir = 0; dir < dim; ++dir){
                     // for each cell support_point_index spans from 0 to dim*Nvert_per_cell-1
                     // eg for dim =2 spans from 0-7
@@ -287,6 +315,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     // essentially we are treating all xyz coordinates as variables although we are going to
                     // change only the vertical component of it (In 2D this is the y).
                     unsigned int support_point_index = mesh_fe.component_to_system_index(dir, idof );
+                    spi.push_back(support_point_index);
                     current_dofs[dir] = static_cast<int>(cell_dof_indices[support_point_index]);
                     current_node[dir] = fe_mesh_points.quadrature_point(idof)[dir];
                     distributed_mesh_vertices[cell_dof_indices[support_point_index]] = current_node[dir];
@@ -294,35 +323,68 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     pcout << "dir:" << dir << ", idof:" << idof << ", cur_dof:" << current_dofs[dir]
                           <<   ", cur_nd:" << current_node[dir] << ", spi:" << support_point_index << std::endl;
                 }
+                trianode<dim> temp;
+                temp.pnt = current_node;
+                temp.dof = current_dofs[dim-1];
+                temp.level = cell->level();
+                temp.hang = mesh_constraints.is_constrained(current_dofs[dim-1]);
+                temp.spi = spi[dim-1];
+                curr_cell_info[idof] = temp;
+            }
+
+            typename std::map<int, trianode<dim> >::iterator it;
+            for (it = curr_cell_info.begin(); it != curr_cell_info.end(); ++it){
+                // get the nodes connected with this one
+                std::vector<int> id_conn = get_connected_indices<dim>(it->first);
+                // create a map of the points to add
+                std::map<int, std::pair<int,int> > connectedNodes;
+                for (unsigned int i = 0; i < id_conn.size(); ++i){
+                    connectedNodes.insert(std::pair<int, std::pair<int,int> >(curr_cell_info[id_conn[i]].dof,
+                                          std::pair<int,int> (curr_cell_info[id_conn[i]].level,
+                                                              curr_cell_info[id_conn[i]].hang)));
+                }
 
                 // find if we have already check this point
-                itint = dof_local.find(current_dofs[dim-1]);
+                itint = dof_local.find(it->first);
                 if (itint != dof_local.end()){
-                    // MAYBE THATS NOT NEEDED
-                    // if the point is already inside the map we just need to check if this cell
-                    // has any ghost neighbors. If yes then we flag the XY location for sharing.
-                    // We do that of we have not set the sharing flag before
+                    // if we have already find this point on a previous cell add the new points
+                    // that this point is connecected to
                 }else{
-                    // we have to add this point to the structure.
-                    Zinfo zinfo(current_node[dim-1], current_dofs[dim-1], cell->level(),
-                            mesh_constraints.is_constrained(current_dofs[dim-1]));
-                    // ADD THE CODE ABOUT THE BOUNDARY INFO
 
-                    Point<dim-1> ptemp;
-                    for (unsigned int d = 0; d < dim-1; ++d)
-                        ptemp[d] = current_node[d];
+                    //we add a new point in the structure
+                    Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, connectedNodes);
 
-                    int id_in_map = add_new_point(ptemp, zinfo);
-                    if (id_in_map < 0)
-                        std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
-                    else{
-                        bool tf = any_ghost_neighbor<dim>(cell);
-                        if (tf)
-                            PointsMap[id_in_map].have_to_send = 1;
-                    }
-                    dof_local[current_dofs[dim-1]] = id_in_map;
                 }
             }
+
+
+//            // find if we have already check this point
+//            itint = dof_local.find(current_dofs[dim-1]);
+//            if (itint != dof_local.end()){
+//                // MAYBE THATS NOT NEEDED
+//                // if the point is already inside the map we just need to check if this cell
+//                // has any ghost neighbors. If yes then we flag the XY location for sharing.
+//                // We do that of we have not set the sharing flag before
+//            }else{
+//                // we have to add this point to the structure.
+//                Zinfo zinfo(current_node[dim-1], current_dofs[dim-1], cell->level(),
+//                        mesh_constraints.is_constrained(current_dofs[dim-1]));
+//                // ADD THE CODE ABOUT THE BOUNDARY INFO
+
+//                Point<dim-1> ptemp;
+//                for (unsigned int d = 0; d < dim-1; ++d)
+//                    ptemp[d] = current_node[d];
+
+//                int id_in_map = add_new_point(ptemp, zinfo);
+//                if (id_in_map < 0)
+//                    std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
+//                else{
+//                    bool tf = any_ghost_neighbor<dim>(cell);
+//                    if (tf)
+//                        PointsMap[id_in_map].have_to_send = 1;
+//                }
+//                dof_local[current_dofs[dim-1]] = id_in_map;
+//            }
         }
         pcout << "----------------------------------------------------------------" << std::endl;
     }
@@ -423,8 +485,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                         std::cerr << "There must be an entry under this key" << std::endl;
 
                     for (unsigned int k = static_cast<unsigned int>(istart[i_proc][i]); k <= static_cast<unsigned int>(iend[i_proc][i]); ++k){
-                        Zinfo ztest(Zcoord[i_proc][k], dof[i_proc][k], level[i_proc][k], is_hanging[i_proc][k] );
-                        it->second.add_Zcoord(ztest, z_thres);
+                        //Zinfo ztest(Zcoord[i_proc][k], dof[i_proc][k], level[i_proc][k], is_hanging[i_proc][k] );
+                        //it->second.add_Zcoord(ztest, z_thres);
                     }
                 }
             }
@@ -572,7 +634,7 @@ void Mesh_struct<dim>::compute_initial_elevations(MyFunction<dim, dim-1> top_fun
 }
 
 template <int dim>
-Mesh_struct<dim>::update_z(int level, MPI_Comm &mpi_communicator){
+void Mesh_struct<dim>::update_z(int level, MPI_Comm &mpi_communicator){
 
     typename std::map<int , PntsInfo<dim> >::iterator it;
     for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
