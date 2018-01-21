@@ -65,7 +65,8 @@ public:
      */
     int number_of_positive_dofs();
 
-    /*! Assign the ids above and below of each node in the Zlist
+    /*! THE LOGIC HAS CHANGE AND NEED TO REWRITE THIS
+     * Assign the ids above and below of each node in the Zlist
      * Call this routine only if all the points have positive dofs.
      * It is also assumed that each processor has all the points it needs from the other processors
      * Two z nodes are connected if there is a cell in the triangulation that has a face with those two nodes
@@ -168,79 +169,72 @@ void PntsInfo<dim>::set_ids_above_below(){
      *      |-------|           |       |
      *      |   |   |           |       |
      *      ---------           ---------
-     *      |       |           |   |   |
+     *      |  [0]  |           |   |   |
      *      |       |           ---------
      *      |       |           |   |   |
      *      ---------           ---------
+     *                             [0]
      */
 
-    bool hanging_pair;
-    if (Zlist[0].hanging == 0)// this is case b
-        hanging_pair= true;
-    else
-        hanging_pair = false; // this is case a
 
     for (unsigned int i = 0; i < Zlist.size(); ++i){
         if (i == 0){//================================================
-            // If the is the first node from the bottom
+            // If this is the first node from the bottom
             Zlist[i].id_above = Zlist[i+1].dof;
-            Zlist[i].connected_above = true;
-            Zlist[i].id_bot = Zlist[i].dof;
-
-            if (Zlist[i].hanging == 0){
-                B = Zlist[i].z;// MAYBE THIS HAS TO BE SET LATER. IF YES CHANGE THE CONDITION
-            }else{
-                hanging_pair = !hanging_pair;
-            }
+            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].id_above);
+            Zlist[i].dof_bot = Zlist[i].dof;
+            Zlist[i].id_bot = i;
 
         }else if(i==Zlist.size()-1){//======================================
             //this is the top node on this list
             Zlist[i].id_below = Zlist[i-1].dof;
-            Zlist[i].connected_below = true;
-            Zlist[i].id_top = Zlist[i].dof;
+            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].id_below);
+            Zlist[i].dof_top = Zlist[i].dof;
+            Zlist[i].id_top = i;
 
-            if (Zlist[i].hanging == 0){
-                T = Zlist[i].z;// MAYBE THIS HAS TO BE SET LATER. IF YES CHANGE THE CONDITION
-            }else{
-                hanging_pair = !hanging_pair;
-            }
         }else{
             Zlist[i].id_above = Zlist[i+1].dof;
             Zlist[i].id_below = Zlist[i-1].dof;
-            if (Zlist[i].hanging == 0){
-                Zlist[i].connected_above = true;
-                Zlist[i].connected_below = true;
-            }else{
-                hanging_pair = !hanging_pair;
-                if (hanging_pair)
-                    Zlist[i].connected_above = true;
-                else
-                    Zlist[i].connected_below = true;
-            }
+            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].id_above);
+            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].id_below);
         }
-
     }
-
-    int cur_id_bot =Zlist[0].dof;
+    // THIS PART HAS NOT BEEN TESTED YET=======================================
+    int cur_dof_bot =Zlist[0].dof;
+    int cur_id_bot = 0;
     for (unsigned int i = 1; i < Zlist.size(); ++i){
         if (Zlist[i].connected_below){
+            Zlist[i].dof_bot = cur_dof_bot;
             Zlist[i].id_bot = cur_id_bot;
         }else{
-            Zlist[i].id_bot = Zlist[i].dof;
-            cur_id_bot = Zlist[i].dof;
+            Zlist[i].dof_bot = Zlist[i].dof;
+            Zlist[i].id_bot = i;
+            cur_dof_bot = Zlist[i].dof;
+            cur_id_bot = i;
         }
     }
 
-    int cur_id_top =Zlist[Zlist.size()-1].dof;
+    int cur_dof_top =Zlist[Zlist.size()-1].dof;
+    int cur_id_top = Zlist.size()-1;
     for (int i = Zlist.size() - 2; i >=0; --i){// When we loop with --i unsigned int causes errors if i gets below 0
         //std::cout << i << std::endl;
-        if (Zlist[i].connected_above)
+        if (Zlist[i].connected_above){
+            Zlist[i].dof_top = cur_dof_top;
             Zlist[i].id_top = cur_id_top;
+        }
         else{
-            Zlist[i].id_top = Zlist[i].dof;
-            cur_id_top = Zlist[i].dof;
+            Zlist[i].dof_top = Zlist[i].dof;
+            Zlist[i].id_top = i;
+            cur_dof_top = Zlist[i].dof;
+            cur_id_top = i;
         }
     }
+
+    // Set relative position
+    for (unsigned int i = 0; i < Zlist.size(); ++i){
+        Zlist[i].rel_pos = (Zlist[i].z - Zlist[Zlist[i].id_bot].z)/(Zlist[Zlist[i].id_top].z - Zlist[Zlist[i].id_bot].z);
+    }
+
 }
 
 

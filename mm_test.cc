@@ -106,6 +106,29 @@ void mm_test<dim>::run(){
                                  distributed_mesh_vertices,
                                  mpi_communicator,
                                  pcout);
+
+    // Set Top and Bottom elevation
+    RBF rbf;
+    rbf.centers.push_back(1000);
+    rbf.centers.push_back(2000);
+    rbf.centers.push_back(3000);
+    rbf.centers.push_back(4000);
+    for (unsigned int i = 0; i < rbf.centers.size(); ++i)
+        rbf.weights.push_back(fRand(0, 30));
+
+    // Set initial top bottom elebation elevation
+    typename std::map<int , PntsInfo<dim> >::iterator it;
+    for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
+        it->second.T = 300;// this is supposed to set the initial elevation
+        it->second.B = 0;
+        // Here we update the top
+        it->second.T += rbf.eval(it->second.PNT[0]);
+        std::cout << it->second.T << std::endl;
+    }
+
+
+
+
 }
 
 int main (int argc, char **argv){
@@ -113,6 +136,7 @@ int main (int argc, char **argv){
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
     mm_test<2> mm;
     mm.run();
+
 
     return 0;
 }

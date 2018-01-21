@@ -104,4 +104,34 @@ std::vector<int> get_connected_indices(int ii){
     return out;
 }
 
+class RBF{
+public:
+    RBF();
+
+    std::vector<double> centers;
+    std::vector<double> weights;
+   double eval(double x);
+
+};
+
+RBF::RBF(){}
+
+double RBF::eval(double x){
+    if (centers.size() != weights.size())
+        std::cerr << "The weights have to be equal with the centers" << std::endl;
+
+    double v = 0;
+    for (unsigned int i = 0; i < centers.size(); ++i){
+        v += weights[i]*exp(-pow(0.001*fabs(x - centers[i]),2));
+    }
+    return v;
+}
+
+double fRand(double fMin, double fMax)
+{
+    double f = (double)rand() / RAND_MAX;
+    return fMin + f * (fMax - fMin);
+}
+
+
 #endif // HELPER_FUNCTIONS_H

@@ -99,6 +99,9 @@ public:
     //! this is a cgal container of the points of this class stored in an optimized way for spatial queries
     PointSet2 CGALset;
 
+    //! THe number of levels in the mesh starting from 0 for the coarsest nodes
+    int n_levels;
+
     //! Adds a new point in the structure. If the point exists adds the z coordinate only and returns
     //! the id of the existing point. if the point doesnt exist creates a new point and returns the new id.
     PntIndices add_new_point(Point<dim-1>, Zinfo zinfo);
@@ -130,6 +133,13 @@ public:
                          MPI_Comm&  mpi_communicator,
                          ConditionalOStream pcout);
 
+    //! Once the #PointsMap::T and #PointsMap::B have been set to a new elevation and have also
+    //! the relative positions calculated we can use this method to update the z elevations of the
+    //! Mesh structure. Then the updated elevations will be transfered to the mesh.
+    //! The update starts with the nodes at level 0, which can be set directly as they do not depend on
+    //! any other node.
+    void updateMeshElevation();
+
     //! resets all the information that is contained except the coordinates and the level of the points
     void reset();
 
@@ -157,6 +167,10 @@ public:
 
     //! This method sets the scales #dbg_scale_x and #dbg_scale_z for debug plotting using softwares like houdini
     void dbg_set_scales(double xscale, double zscale);
+
+    //! Update level
+    void update_level(int new_level);
+
 private:
     void dbg_meshStructInfo2D(std::string filename, unsigned int n_proc);
     void dbg_meshStructInfo3D(std::string filename, unsigned int n_proc);
@@ -171,6 +185,9 @@ Mesh_struct<dim>::Mesh_struct(double xy_thr, double z_thr){
     xy_thres = xy_thr;
     z_thres = z_thr;
     _counter = 0;
+    dbg_scale_x = 100;
+    dbg_scale_z = 100;
+    n_levels = 0;
 }
 
 template <int dim>
@@ -234,6 +251,12 @@ int Mesh_struct<dim>::check_if_point_exists(Point<dim-1> p){
     }
 
     return out;
+}
+
+template <int dim>
+void Mesh_struct<dim>::update_level(int new_level){
+    if (new_level > n_levels)
+        n_levels = new_level;
 }
 
 template <int dim>
@@ -346,6 +369,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
                 // Now create a zinfo variable
                 Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, connectedNodes);
+                update_level(it->second.level);
                 // and a point
                 Point<dim-1> ptemp;
                 for (unsigned int d = 0; d < dim-1; ++d)
@@ -353,6 +377,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
                 // Try to add it in the structure
                 PntIndices id_in_map = add_new_point(ptemp, zinfo);
+
                 if (id_in_map.XYind < 0)
                     std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
                 else{
@@ -374,7 +399,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
 
     //dbg_meshStructInfo2D("before2D", my_rank);
-    dbg_meshStructInfo3D("before3D", my_rank);
+    //dbg_meshStructInfo3D("before3D", my_rank);
 
 
     if (n_proc > 1){
@@ -477,8 +502,12 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         MPI_Barrier(mpi_communicator);
     }//if (n_proc > 1)
 
+    // Up to this point each processor should have a complete subgrid for the points it owns
+    // So we can update the remaining info for each point
+    set_id_above_below();
+    dbg_meshStructInfo3D("After3D", my_rank);
+
     //set_id_above_below();
-    //dbg_meshStructInfo3D("After3D", my_rank);
 
 
 
@@ -601,16 +630,62 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
      const std::string log_file_name1 = (filename + "_lns_" +
                                         Utilities::int_to_string(my_rank+1, 4) +
                                         ".txt");
+
      std::ofstream log_file1;
      log_file1.open(log_file_name1.c_str());
 
      std::map<int,std::pair<int,int> >::iterator it_dof;
      std::map<std::pair<int,int>, int>::iterator itl;
+     double x1,y1,z1,x2,y2,z2;
      for (itl = line_map.begin(); itl!=line_map.end(); ++itl){
             it_dof = dof_ij.find(itl->first.first);
+            x1 = PointsMap[it_dof->second.first].PNT[0];
+            if (dim ==2 ) z1 = 0; else
+                z1 = PointsMap[it_dof->second.first].PNT[1];
+            y1 = PointsMap[it_dof->second.first].Zlist[it_dof->second.second].z;
+
+            it_dof = dof_ij.find(itl->first.second);
+            x2 = PointsMap[it_dof->second.first].PNT[0];
+            if (dim ==2 ) z2 = 0; else
+                z2 = PointsMap[it_dof->second.first].PNT[1];
+            y2 = PointsMap[it_dof->second.first].Zlist[it_dof->second.second].z;
+            log_file1 << x1/dbg_scale_x << ", " << y1/dbg_scale_z << ", " << z1 << ", "
+                      << x2/dbg_scale_x << ", " << y2/dbg_scale_z << ", " << z2 <<  std::endl;
 
      }
+     log_file1.close();
 
+}
+
+template<int dim>
+void Mesh_struct::updateMeshElevation(){
+    for (int i = 0; i <= n_levels; ++i ){
+        typename std::map<int , PntsInfo<dim> >::iterator it;
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+            std::map<int,int> prior;
+            // First we loop through the points of this level and identify
+            // the nodes that the nodes depend on
+            for (; itz != it->second.Zlist.end(); ++itz){
+                if (itz->level == i){
+                    if (itz->dof_bot >=0)
+                        prior[itz->id_bot] = itz->dof_bot;
+                    if (itz->dof_top >=0)
+                        prior[itz->id_top] = itz->dof_top;
+                }
+            }
+            std::map<int, int>::iterator itpr;
+            for (itpr = prior.begin(); itpr != prior.end(); ++itpr){
+                if (it->second.Zlist[itpr->first].hanging == 1){
+                    // We have to caclulate the elevation from the nodes it depends
+                }else{
+                    //
+
+                }
+            }
+
+        }
+    }
 }
 
 template <int dim>

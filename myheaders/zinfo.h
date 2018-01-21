@@ -52,6 +52,11 @@ public:
     //! A typical case would be after resetting the mesh structure
     void update_main_info(Zinfo newZ);
 
+    //! This method returns true if the point is connected to this one
+    //! Essentially is considered connected if the point in question can be found
+    //! in the #dof_conn map of connected nodes
+    bool connected_with(int dof_in);
+
 //    //! Copies the zinfo of the vertex to this vertex. The operation does that blindly
 //    //! without checking if the input values make sense.
     //void copy(Zinfo zinfo);
@@ -81,9 +86,15 @@ public:
     int id_below;
 
     //! The dof of the node that serves as top for this node
+    int dof_top;
+
+    //! This is the index of the #dof_top node in the list of the #PntsInfo::Zlist
     int id_top;
 
     //! The dof of the node that serves as bottom for this node
+    int dof_bot;
+
+    //! This is the index of the #dof_bot node in the list of the #PntsInfo::Zlist
     int id_bot;
 
     //! This is a flag that specifies whether the vertex is used or not
@@ -97,6 +108,8 @@ public:
     //! If this is a hanging node then one of the #connected_above or #connected_below
     //! must be false and the other true
     bool connected_below;
+
+    bool isZset;
 };
 
 Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::map<int,std::pair<int,int> > conn){
@@ -117,11 +130,15 @@ Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::map<int,st
     id_below = -9;
     used = true;
 
+    dof_top = -9;
+    dof_bot= -9;
     id_top = -9;
-    id_bot= -9;
+    id_bot = 9;
     rel_pos = -9.0;
     connected_above = false;
     connected_below = false;
+    isZset = false;
+
 
     Add_connections(conn);
 }
@@ -166,6 +183,9 @@ bool Zinfo::compare(double z_in, double thres){
 //    z           =   zinfo.z;
 //}
 
+bool Zinfo::connected_with(int dof_in){
+    return dof_conn.count(dof_in) > 0;
+}
 
 void Zinfo::reset(){
     // when we reset a point we change all values to dummy ones except
@@ -177,8 +197,10 @@ void Zinfo::reset(){
 
     used = false;
 
+    dof_top = -9;
+    dof_bot= -9;
     id_top = -9;
-    id_bot= -9;
+    id_bot = -9;
     rel_pos = -9.0;
 }
 
