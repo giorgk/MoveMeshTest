@@ -80,7 +80,7 @@ void mm_test<dim>::make_grid(){
     std::vector<unsigned int>	n_cells;
     if (dim == 2) {
         right_top[0] = 5000; right_top[1] = 300;
-        n_cells.push_back(20); n_cells.push_back(6);
+        n_cells.push_back(40); n_cells.push_back(12);
     }
     else if (dim == 3){
         right_top[0] = 5000; right_top[1] = 5000; right_top[2] = 300;
@@ -106,7 +106,6 @@ void mm_test<dim>::run(){
                                  distributed_mesh_vertices,
                                  mpi_communicator,
                                  pcout);
-    return;
 
 
     // Set Top and Bottom elevation
@@ -125,7 +124,6 @@ void mm_test<dim>::run(){
         it->second.B = 0;
         // Here we update the top
         it->second.T += rbf.eval(it->second.PNT[0]);
-        std::cout << it->second.T << std::endl;
     }
 
     mesh_struct.updateMeshElevation(mesh_dof_handler,
@@ -135,7 +133,9 @@ void mm_test<dim>::run(){
                                     mpi_communicator,
                                     pcout);
 
-    //
+
+
+
 
 
 

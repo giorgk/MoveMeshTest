@@ -220,17 +220,12 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
 
                 if (j == 0){
                     PntsInfo<dim> pntinfo(p,zinfo);
-                    Pnts[my_rank].push_back(pntinfo);
+                    Pnts[i_proc].push_back(pntinfo);
                 }else{
-                    Pnts[my_rank][Pnts[my_rank].size()-1].add_Zcoord(zinfo, z_thres);
+                    Pnts[i_proc][Pnts[i_proc].size()-1].add_Zcoord(zinfo, z_thres);
                 }
             }
         }
-    }
-    if (my_rank == 0){
-        for (int i = 0; i < n_proc; ++i)
-            std::cout << "I'm rank " << my_rank << " and I have Pnts  " << Pnts[i].size() << std::endl;
-
     }
 }
 

@@ -413,17 +413,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         // we loop through each vertex and store to a separate vector
         // those that require communication and they are actively used
 
-        std::vector<std::vector<double> > Xcoord(n_proc);
-        std::vector<std::vector<double> > Ycoord(n_proc);
-        std::vector<std::vector<double> > Zcoord(n_proc);
-        //std::vector<std::vector<int> > id_above(n_proc);// this are not needed at this time
-        //std::vector<std::vector<int> > id_below(n_proc);// they should be -9 but have to double check within a loop
-        std::vector<std::vector<int> > is_hanging(n_proc);
-        std::vector<std::vector<int> > dof(n_proc);
-        std::vector<std::vector<int> > level(n_proc);
-        std::vector<std::vector<int> > istart(n_proc);
-        std::vector<std::vector<int> > iend(n_proc);
-
         std::vector< std::vector<PntsInfo<dim> > > sharedPoints(n_proc);
 
         typename std::map<int ,  PntsInfo<dim> >::iterator it;
@@ -432,97 +421,44 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 // IN the old code I was checking for positive dofs.
                 // I have to see whether I should check that again
                 sharedPoints[my_rank].push_back(it->second);
-
-//                if (it->second.number_of_positive_dofs() > 0){
-//                    Xcoord[my_rank].push_back(it->second.PNT[0]);
-//                    if (dim ==3)
-//                        Ycoord[my_rank].push_back(it->second.PNT[1]);
-//                    istart[my_rank].push_back(Zcoord[my_rank].size());
-//                    std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
-//                    for (; itz != it->second.Zlist.end(); ++itz){
-//                        // we will send only those with meaningful dof
-//                        if (itz->dof >= 0){
-//                            Zcoord[my_rank].push_back(itz->z);
-//                            //id_above[my_rank].push_back(itz->id_above);// maybe not needed at this time
-//                            //id_below[my_rank].push_back(itz->id_below);// maybe not needed at this time
-//                            is_hanging[my_rank].push_back(itz->hanging);
-//                            dof[my_rank].push_back(itz->dof);
-//                            level[my_rank].push_back(itz->level);
-//                        }
-//                    }
-//                    iend[my_rank].push_back(Zcoord[my_rank].size()-1);
-//                }
             }
         }
 
-        std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << std::endl;
+        //std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << std::endl;
         MPI_Barrier(mpi_communicator);
 
         // -----------------Send those points to every processor------------
 
         SendReceive_PntsInfo(sharedPoints, my_rank, n_proc, z_thres, mpi_communicator);
-        if (my_rank == 0){
-            for (int i = 0; i < n_proc; ++i)
-                std::cout << "I'm rank " << my_rank << " and I have " << sharedPoints[i].size() << std::endl;
-
-        }
 
         // Loop through the received points and get the ones my_rank needs
         for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
             if (i_proc == my_rank) continue;// my_rank already knows these poitns
 
             for (unsigned int i = 0; i < sharedPoints[i_proc].size(); ++i){
-                if (my_rank == 0){
-                    std::cout << "i_proc: " << i_proc << ", x: " << sharedPoints[i_proc][i].PNT[0] << std::endl;
-                 }
-                //std::vector<Zinfo>::iterator itz = sharedPoints[i_proc].Zlist.begin();
-
+                int id = check_if_point_exists(sharedPoints[i_proc][i].PNT);
+                if (id >= 0){
+                    it = PointsMap.find(id);
+                    if (it == PointsMap.end())
+                        std::cerr << "There must be an entry under this key" << std::endl;
+                    else{
+                        std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
+                        for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
+                            it->second.add_Zcoord(*itz, z_thres);
+                        }
+                    }
+                }
             }
-
-
         }
-
-        return;
-
-
-
-//        // now we loop through the processors and the points that have been received from the other processors
-//        // and for those that this processor has points under the same XY location it will check if the point
-//        // is missing. if yes it will add it to its structure
-//        std::map<int,int> id_map;
-//        for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
-//            if (i_proc == my_rank) continue; // we do not check the point that this processor has sent
-//            for (unsigned int i = 0; i < Xcoord[i_proc].size(); ++i){
-//                Point<dim-1> ptemp;
-//                ptemp[0] = Xcoord[i_proc][i];
-//                if (dim == 3)ptemp[1] = Ycoord[i_proc][i];
-//                int id = check_if_point_exists(ptemp);
-//                if (id >= 0){
-//                    it = PointsMap.find(id);
-//                    if (it == PointsMap.end())
-//                        std::cerr << "There must be an entry under this key" << std::endl;
-
-//                    for (unsigned int k = static_cast<unsigned int>(istart[i_proc][i]); k <= static_cast<unsigned int>(iend[i_proc][i]); ++k){
-//                        //Zinfo ztest(Zcoord[i_proc][k], dof[i_proc][k], level[i_proc][k], is_hanging[i_proc][k] );
-//                        //it->second.add_Zcoord(ztest, z_thres);
-//                    }
-//                }
-//            }
-//        }
-
-        set_id_above_below();
-        dbg_meshStructInfo3D("After3D", my_rank);
         MPI_Barrier(mpi_communicator);
     }//if (n_proc > 1)
 
-    // Up to this point each processor should have a complete subgrid for the points it owns
-    // So we can update the remaining info for each point
+    // IN the new code this may not needed. However it is needed for debuging
+    make_dof_ij_map();
+    //dbg_meshStructInfo3D("After3D", my_rank);
+
     set_id_above_below();
-    dbg_meshStructInfo3D("After3D", my_rank);
-
-    //set_id_above_below();
-
-
+    //dbg_meshStructInfo3D("After3D", my_rank);
 
     std::clock_t end_t = std::clock();
     double elapsed_secs = double(end_t - begin_t)/CLOCKS_PER_SEC;
@@ -606,6 +542,7 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                       << std::setw(15) << y << ", "
                       << std::setw(15) << z << ", "
                       << std::setw(15) << itz->dof << ", "
+                      << std::setw(15) << itz->dof_conn.size() << ", "
                       << std::setw(15) << itz->level << ", "
                       << std::setw(15) << itz->id_above  << ", "
                       << std::setw(15) << itz->id_below << ", "
@@ -651,23 +588,25 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
      std::map<std::pair<int,int>, int>::iterator itl;
      double x1,y1,z1,x2,y2,z2;
      for (itl = line_map.begin(); itl!=line_map.end(); ++itl){
-            it_dof = dof_ij.find(itl->first.first);
+        it_dof = dof_ij.find(itl->first.first);
+        if (it_dof != dof_ij.end()){
             x1 = PointsMap[it_dof->second.first].PNT[0];
             if (dim ==2 ) z1 = 0; else
                 z1 = PointsMap[it_dof->second.first].PNT[1];
             y1 = PointsMap[it_dof->second.first].Zlist[it_dof->second.second].z;
 
             it_dof = dof_ij.find(itl->first.second);
-            x2 = PointsMap[it_dof->second.first].PNT[0];
-            if (dim ==2 ) z2 = 0; else
-                z2 = PointsMap[it_dof->second.first].PNT[1];
-            y2 = PointsMap[it_dof->second.first].Zlist[it_dof->second.second].z;
-            log_file1 << x1/dbg_scale_x << ", " << y1/dbg_scale_z << ", " << z1 << ", "
-                      << x2/dbg_scale_x << ", " << y2/dbg_scale_z << ", " << z2 <<  std::endl;
-
+            if (it_dof != dof_ij.end()){
+                x2 = PointsMap[it_dof->second.first].PNT[0];
+                if (dim ==2 ) z2 = 0; else
+                    z2 = PointsMap[it_dof->second.first].PNT[1];
+                y2 = PointsMap[it_dof->second.first].Zlist[it_dof->second.second].z;
+                log_file1 << x1/dbg_scale_x << ", " << y1/dbg_scale_z << ", " << z1 << ", "
+                          << x2/dbg_scale_x << ", " << y2/dbg_scale_z << ", " << z2 <<  std::endl;
+            }
+        }
      }
      log_file1.close();
-
 }
 
 template<int dim>
@@ -679,6 +618,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                            ConditionalOStream pcout){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
+    //dbg_meshStructInfo3D("After3D", my_rank);
 
     n_levels = 0;
     typename std::map<int , PntsInfo<dim> >::iterator it;
@@ -700,7 +640,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             }
         }
     }
-    dbg_meshStructInfo3D("After3D", 0);
+    dbg_meshStructInfo3D("After3D", my_rank);
+
 
 
 
@@ -745,10 +686,12 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 if (dim == 2)
                     mesh_file << 0 << ", ";
             }
+            mesh_file << std::endl;
         }
-        mesh_file << std::endl;
     }
     mesh_file.close();
+
+    return;
 
 
 }
@@ -769,6 +712,7 @@ void Mesh_struct<dim>::set_id_above_below(){
 
 template  <int dim>
 void Mesh_struct<dim>::make_dof_ij_map(){
+    dof_ij.clear();
     typename std::map<int , PntsInfo<dim> >::iterator it;
     for (it = PointsMap.begin(); it != PointsMap.end(); ++it)
         for (unsigned int k = 0; k < it->second.Zlist.size(); ++k){
