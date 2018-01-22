@@ -138,7 +138,12 @@ public:
     //! Mesh structure. Then the updated elevations will be transfered to the mesh.
     //! The update starts with the nodes at level 0, which can be set directly as they do not depend on
     //! any other node.
-    void updateMeshElevation();
+    void updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
+                             ConstraintMatrix& mesh_constraints,
+                             TrilinosWrappers::MPI::Vector& mesh_vertices,
+                             TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
+                             MPI_Comm&  mpi_communicator,
+                             ConditionalOStream pcout);
 
     //! resets all the information that is contained except the coordinates and the level of the points
     void reset();
@@ -343,8 +348,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     current_node[dir] = fe_mesh_points.quadrature_point(idof)[dir];
                     distributed_mesh_vertices[cell_dof_indices[support_point_index]] = current_node[dir];
 
-                    pcout << "dir:" << dir << ", idof:" << idof << ", cur_dof:" << current_dofs[dir]
-                          <<   ", cur_nd:" << current_node[dir] << ", spi:" << support_point_index << std::endl;
+                    //pcout << "dir:" << dir << ", idof:" << idof << ", cur_dof:" << current_dofs[dir]
+                    //      <<   ", cur_nd:" << current_node[dir] << ", spi:" << support_point_index << std::endl;
                 }
                 trianode<dim> temp;
                 temp.pnt = current_node;
@@ -386,7 +391,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                         PointsMap[id_in_map.XYind].have_to_send = 1;
                 }
             }
-            pcout << "----------------------------------------------------------------" << std::endl;
+            //pcout << "----------------------------------------------------------------" << std::endl;
         }
     }
 
@@ -399,7 +404,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
 
     //dbg_meshStructInfo2D("before2D", my_rank);
-    //dbg_meshStructInfo3D("before3D", my_rank);
+    dbg_meshStructInfo3D("before3D", my_rank);
 
 
     if (n_proc > 1){
@@ -419,83 +424,91 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         std::vector<std::vector<int> > istart(n_proc);
         std::vector<std::vector<int> > iend(n_proc);
 
+        std::vector< std::vector<PntsInfo<dim> > > sharedPoints(n_proc);
+
         typename std::map<int ,  PntsInfo<dim> >::iterator it;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             if (it->second.have_to_send == 1){
-                if (it->second.number_of_positive_dofs() > 0){
-                    Xcoord[my_rank].push_back(it->second.PNT[0]);
-                    if (dim ==3)
-                        Ycoord[my_rank].push_back(it->second.PNT[1]);
-                    istart[my_rank].push_back(Zcoord[my_rank].size());
-                    std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
-                    for (; itz != it->second.Zlist.end(); ++itz){
-                        // we will send only those with meaningful dof
-                        if (itz->dof >= 0){
-                            Zcoord[my_rank].push_back(itz->z);
-                            //id_above[my_rank].push_back(itz->id_above);// maybe not needed at this time
-                            //id_below[my_rank].push_back(itz->id_below);// maybe not needed at this time
-                            is_hanging[my_rank].push_back(itz->hanging);
-                            dof[my_rank].push_back(itz->dof);
-                            level[my_rank].push_back(itz->level);
-                        }
-                    }
-                    iend[my_rank].push_back(Zcoord[my_rank].size()-1);
-                }
+                // IN the old code I was checking for positive dofs.
+                // I have to see whether I should check that again
+                sharedPoints[my_rank].push_back(it->second);
+
+//                if (it->second.number_of_positive_dofs() > 0){
+//                    Xcoord[my_rank].push_back(it->second.PNT[0]);
+//                    if (dim ==3)
+//                        Ycoord[my_rank].push_back(it->second.PNT[1]);
+//                    istart[my_rank].push_back(Zcoord[my_rank].size());
+//                    std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+//                    for (; itz != it->second.Zlist.end(); ++itz){
+//                        // we will send only those with meaningful dof
+//                        if (itz->dof >= 0){
+//                            Zcoord[my_rank].push_back(itz->z);
+//                            //id_above[my_rank].push_back(itz->id_above);// maybe not needed at this time
+//                            //id_below[my_rank].push_back(itz->id_below);// maybe not needed at this time
+//                            is_hanging[my_rank].push_back(itz->hanging);
+//                            dof[my_rank].push_back(itz->dof);
+//                            level[my_rank].push_back(itz->level);
+//                        }
+//                    }
+//                    iend[my_rank].push_back(Zcoord[my_rank].size()-1);
+//                }
             }
         }
-        std::cout << "I'm rank " << my_rank << " and I'll send " << Xcoord[my_rank].size() << " and " << Zcoord[my_rank].size() << std::endl;
+
+        std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << std::endl;
         MPI_Barrier(mpi_communicator);
 
         // -----------------Send those points to every processor------------
 
-        // -------Send Receive the XY information
-        std::vector<int> nxypoints_per_proc;
-        Send_receive_size(Xcoord[my_rank].size(), n_proc, nxypoints_per_proc, mpi_communicator);
-        for (unsigned int i = 0; i < nxypoints_per_proc.size(); ++i)
-            pcout << "rank:" << i << "has: " << nxypoints_per_proc[i] << std::endl;
+        SendReceive_PntsInfo(sharedPoints, my_rank, n_proc, z_thres, mpi_communicator);
+        if (my_rank == 0){
+            for (int i = 0; i < n_proc; ++i)
+                std::cout << "I'm rank " << my_rank << " and I have " << sharedPoints[i].size() << std::endl;
 
-        Sent_receive_data<double>(Xcoord, nxypoints_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
-        if (dim ==3)
-            Sent_receive_data<double>(Ycoord, nxypoints_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
-        Sent_receive_data<int>(istart, nxypoints_per_proc, my_rank, mpi_communicator, MPI_INT);
-        Sent_receive_data<int>(iend, nxypoints_per_proc, my_rank, mpi_communicator, MPI_INT);
-
-
-        // ------------Send Receive the Z information
-        std::vector<int> nzpoints_per_proc;
-        Send_receive_size(Zcoord[my_rank].size(), n_proc, nzpoints_per_proc, mpi_communicator);
-
-        Sent_receive_data<double>(Zcoord, nzpoints_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
-        //Sent_receive_data<int>(id_above, nzpoints_per_proc, my_rank, mpi_communicator, MPI::INT);// WHY THIS AT THIS POINT???
-        //Sent_receive_data<int>(id_below, nzpoints_per_proc, my_rank, mpi_communicator, MPI::INT);// WHY THIS AT THIS POINT???
-        Sent_receive_data<int>(is_hanging, nzpoints_per_proc, my_rank, mpi_communicator, MPI_INT);
-        Sent_receive_data<int>(dof, nzpoints_per_proc, my_rank, mpi_communicator, MPI_INT);
-        Sent_receive_data<int>(level, nzpoints_per_proc, my_rank, mpi_communicator, MPI_INT);
-        MPI_Barrier(mpi_communicator);
-
-        // now we loop through the processors and the points that have been received from the other processors
-        // and for those that this processor has points under the same XY location it will check if the point
-        // is missing. if yes it will add it to its structure
-        std::map<int,int> id_map;
-        for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
-            if (i_proc == my_rank) continue; // we do not check the point that this processor has sent
-            for (unsigned int i = 0; i < Xcoord[i_proc].size(); ++i){
-                Point<dim-1> ptemp;
-                ptemp[0] = Xcoord[i_proc][i];
-                if (dim == 3)ptemp[1] = Ycoord[i_proc][i];
-                int id = check_if_point_exists(ptemp);
-                if (id >= 0){
-                    it = PointsMap.find(id);
-                    if (it == PointsMap.end())
-                        std::cerr << "There must be an entry under this key" << std::endl;
-
-                    for (unsigned int k = static_cast<unsigned int>(istart[i_proc][i]); k <= static_cast<unsigned int>(iend[i_proc][i]); ++k){
-                        //Zinfo ztest(Zcoord[i_proc][k], dof[i_proc][k], level[i_proc][k], is_hanging[i_proc][k] );
-                        //it->second.add_Zcoord(ztest, z_thres);
-                    }
-                }
-            }
         }
+
+        // Loop through the received points and get the ones my_rank needs
+        for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
+            if (i_proc == my_rank) continue;// my_rank already knows these poitns
+
+            for (unsigned int i = 0; i < sharedPoints[i_proc].size(); ++i){
+                if (my_rank == 0){
+                    std::cout << "i_proc: " << i_proc << ", x: " << sharedPoints[i_proc][i].PNT[0] << std::endl;
+                 }
+                //std::vector<Zinfo>::iterator itz = sharedPoints[i_proc].Zlist.begin();
+
+            }
+
+
+        }
+
+        return;
+
+
+
+//        // now we loop through the processors and the points that have been received from the other processors
+//        // and for those that this processor has points under the same XY location it will check if the point
+//        // is missing. if yes it will add it to its structure
+//        std::map<int,int> id_map;
+//        for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
+//            if (i_proc == my_rank) continue; // we do not check the point that this processor has sent
+//            for (unsigned int i = 0; i < Xcoord[i_proc].size(); ++i){
+//                Point<dim-1> ptemp;
+//                ptemp[0] = Xcoord[i_proc][i];
+//                if (dim == 3)ptemp[1] = Ycoord[i_proc][i];
+//                int id = check_if_point_exists(ptemp);
+//                if (id >= 0){
+//                    it = PointsMap.find(id);
+//                    if (it == PointsMap.end())
+//                        std::cerr << "There must be an entry under this key" << std::endl;
+
+//                    for (unsigned int k = static_cast<unsigned int>(istart[i_proc][i]); k <= static_cast<unsigned int>(iend[i_proc][i]); ++k){
+//                        //Zinfo ztest(Zcoord[i_proc][k], dof[i_proc][k], level[i_proc][k], is_hanging[i_proc][k] );
+//                        //it->second.add_Zcoord(ztest, z_thres);
+//                    }
+//                }
+//            }
+//        }
 
         set_id_above_below();
         dbg_meshStructInfo3D("After3D", my_rank);
@@ -658,34 +671,86 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
 }
 
 template<int dim>
-void Mesh_struct::updateMeshElevation(){
-    for (int i = 0; i <= n_levels; ++i ){
-        typename std::map<int , PntsInfo<dim> >::iterator it;
-        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
-            std::map<int,int> prior;
-            // First we loop through the points of this level and identify
-            // the nodes that the nodes depend on
-            for (; itz != it->second.Zlist.end(); ++itz){
-                if (itz->level == i){
-                    if (itz->dof_bot >=0)
-                        prior[itz->id_bot] = itz->dof_bot;
-                    if (itz->dof_top >=0)
-                        prior[itz->id_top] = itz->dof_top;
-                }
-            }
-            std::map<int, int>::iterator itpr;
-            for (itpr = prior.begin(); itpr != prior.end(); ++itpr){
-                if (it->second.Zlist[itpr->first].hanging == 1){
-                    // We have to caclulate the elevation from the nodes it depends
-                }else{
-                    //
+void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
+                                           ConstraintMatrix& mesh_constraints,
+                                           TrilinosWrappers::MPI::Vector& mesh_vertices,
+                                           TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
+                                           MPI_Comm&  mpi_communicator,
+                                           ConditionalOStream pcout){
+    unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
-                }
-            }
 
+    n_levels = 0;
+    typename std::map<int , PntsInfo<dim> >::iterator it;
+
+    // update level 0
+    // This level has no hanging nodes and the update is straight forward
+    // We simply scale the elevations between B and T according to their relative positions
+    for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+        std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+        for (; itz != it->second.Zlist.end(); ++itz){
+            if (itz->level == 0){
+                itz->z = it->second.T*itz->rel_pos - it->second.B*(1.0 - itz->rel_pos);
+                std::cout << itz->z << ", " << it->second.T << std::endl;
+            }else{
+                // just find which level this node is so that we know how many levels exist
+                // for coming loops
+                if (itz->level > n_levels)
+                    n_levels = itz->level;
+            }
         }
     }
+    dbg_meshStructInfo3D("After3D", 0);
+
+
+
+
+    // After we have finished with all updates in the z structure we have to copy the---------------------------------------
+    // new values to the distributed vector
+    for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+        std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+        for (; itz != it->second.Zlist.end(); ++itz){
+            if (distributed_mesh_vertices.in_local_range(static_cast<unsigned int >(itz->dof))){
+                distributed_mesh_vertices[static_cast<unsigned int >(itz->dof)] = itz->z;
+            }
+        }
+    }
+    // updates the elevations to the constraint nodes --------------------------
+    mesh_constraints.distribute(distributed_mesh_vertices);
+    mesh_vertices = distributed_mesh_vertices;
+
+    //move the actual vertices ------------------------------------------------
+
+    // for debuging just print the cell mesh
+    const std::string mesh_file_name = ("mesh_after_" +
+                                       Utilities::int_to_string(my_rank+1, 4) +
+                                       ".dat");
+    std::ofstream mesh_file;
+    mesh_file.open((mesh_file_name.c_str()));
+
+    typename DoFHandler<dim>::active_cell_iterator
+    cell = mesh_dof_handler.begin_active(),
+    endc = mesh_dof_handler.end();
+    for (; cell != endc; ++cell){
+        if (cell->is_artificial() == false){
+            for (unsigned int vertex_no = 0; vertex_no < GeometryInfo<dim>::vertices_per_cell; ++vertex_no){
+                Point<dim> &v=cell->vertex(vertex_no);
+                for (unsigned int dir=0; dir < dim; ++dir){
+                    v(dir) = mesh_vertices(cell->vertex_dof_index(vertex_no, dir));
+                    if (dir == dim-1)
+                        mesh_file << v(dir)/dbg_scale_z << ", ";
+                    else
+                        mesh_file << v(dir)/dbg_scale_x << ", ";
+                }
+                if (dim == 2)
+                    mesh_file << 0 << ", ";
+            }
+        }
+        mesh_file << std::endl;
+    }
+    mesh_file.close();
+
+
 }
 
 template <int dim>

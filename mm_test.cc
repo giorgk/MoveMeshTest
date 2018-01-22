@@ -80,7 +80,7 @@ void mm_test<dim>::make_grid(){
     std::vector<unsigned int>	n_cells;
     if (dim == 2) {
         right_top[0] = 5000; right_top[1] = 300;
-        n_cells.push_back(10); n_cells.push_back(3);
+        n_cells.push_back(20); n_cells.push_back(6);
     }
     else if (dim == 3){
         right_top[0] = 5000; right_top[1] = 5000; right_top[2] = 300;
@@ -106,6 +106,8 @@ void mm_test<dim>::run(){
                                  distributed_mesh_vertices,
                                  mpi_communicator,
                                  pcout);
+    return;
+
 
     // Set Top and Bottom elevation
     RBF rbf;
@@ -114,7 +116,7 @@ void mm_test<dim>::run(){
     rbf.centers.push_back(3000);
     rbf.centers.push_back(4000);
     for (unsigned int i = 0; i < rbf.centers.size(); ++i)
-        rbf.weights.push_back(fRand(0, 30));
+        rbf.weights.push_back(fRand(-100, 100));
 
     // Set initial top bottom elebation elevation
     typename std::map<int , PntsInfo<dim> >::iterator it;
@@ -126,6 +128,15 @@ void mm_test<dim>::run(){
         std::cout << it->second.T << std::endl;
     }
 
+    mesh_struct.updateMeshElevation(mesh_dof_handler,
+                                    mesh_constraints,
+                                    mesh_vertices,
+                                    distributed_mesh_vertices,
+                                    mpi_communicator,
+                                    pcout);
+
+    //
+
 
 
 
@@ -133,6 +144,7 @@ void mm_test<dim>::run(){
 
 int main (int argc, char **argv){
     deallog.depth_console (1);
+
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
     mm_test<2> mm;
     mm.run();
