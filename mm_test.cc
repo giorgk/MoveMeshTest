@@ -204,7 +204,7 @@ void mm_test<dim>::run(){
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer();
 
-    // Then we need to update the custon mesh structure
+    // Then we need to update the custon mesh structure after any change of the triangulation
     mesh_struct.updateMeshStruct(mesh_dof_handler,
                                  mesh_fe,
                                  mesh_constraints,
@@ -214,6 +214,30 @@ void mm_test<dim>::run(){
                                  distributed_mesh_vertices,
                                  mpi_communicator,
                                  pcout);
+
+    // modify top function
+    rbf.centers.push_back(500);
+    rbf.centers.push_back(1500);
+    rbf.centers.push_back(2500);
+    rbf.centers.push_back(3500);
+    rbf.centers.push_back(4500);
+    rbf.weights.clear();
+    for (unsigned int i = 0; i < rbf.centers.size(); ++i)
+        rbf.weights.push_back(fRand(-100, 100));
+
+    for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
+        it->second.B = 0;
+        it->second.T = 300;
+        it->second.T += rbf.eval(it->second.PNT[0]);
+    }
+
+    mesh_struct.updateMeshElevation(mesh_dof_handler,
+                                    mesh_constraints,
+                                    mesh_vertices,
+                                    distributed_mesh_vertices,
+                                    mpi_communicator,
+                                    pcout);
+
 
 
 }

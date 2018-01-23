@@ -404,7 +404,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     ptemp[d] = it->second.pnt[d];
 
                 // Try to add it in the structure
-                std::cout <<"Zdof: " << zinfo.dof << std::endl;
+                //std::cout <<"Zdof: " << zinfo.dof << std::endl;
                 PntIndices id_in_map = add_new_point(ptemp, zinfo);
 
                 if (id_in_map.XYind < 0)
