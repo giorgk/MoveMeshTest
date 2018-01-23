@@ -128,6 +128,7 @@ void mm_test<dim>::refine_transfer(){
     DoFTools::extract_locally_relevant_dofs (mesh_dof_handler, mesh_locally_relevant);
 
     distributed_mesh_vertices.reinit(mesh_locally_owned, mpi_communicator);
+    distributed_mesh_vertices.compress(VectorOperation::insert);
 
     std::vector<TrilinosWrappers::MPI::Vector *> mesh_tmp (1);
     mesh_tmp[0] = &(distributed_mesh_vertices);
@@ -182,7 +183,7 @@ void mm_test<dim>::run(){
                                     distributed_mesh_vertices,
                                     mpi_communicator,
                                     pcout);
-    return;
+
 
 
     // refine the updated elevations
@@ -200,7 +201,7 @@ void mm_test<dim>::run(){
     }
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer();
-
+    return;
     // Then we need to update the custon mesh structure
     mesh_struct.updateMeshStruct(mesh_dof_handler,
                                  mesh_fe,

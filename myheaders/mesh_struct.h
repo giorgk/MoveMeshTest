@@ -674,6 +674,9 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             }
         }
     }
+    // The compress sends the data to the processors that owns the data
+    distributed_mesh_vertices.compress(VectorOperation::insert);
+
     // updates the elevations to the constraint nodes --------------------------
     mesh_constraints.distribute(distributed_mesh_vertices);
     mesh_vertices = distributed_mesh_vertices;
@@ -700,7 +703,7 @@ void Mesh_struct<dim>::move_vertices(DoFHandler<dim>& mesh_dof_handler,
     cell = mesh_dof_handler.begin_active(),
     endc = mesh_dof_handler.end();
     for (; cell != endc; ++cell){
-        if (cell->is_artificial() == false){
+        if (cell->is_locally_owned()){//cell->is_artificial() == false
             for (unsigned int vertex_no = 0; vertex_no < GeometryInfo<dim>::vertices_per_cell; ++vertex_no){
                 Point<dim> &v=cell->vertex(vertex_no);
                 for (unsigned int dir=0; dir < dim; ++dir){
