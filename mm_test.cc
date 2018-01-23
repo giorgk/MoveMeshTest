@@ -20,6 +20,8 @@
 #include <deal.II/lac/constraint_matrix.h>
 
 #include <iostream>
+#include <stdlib.h>
+#include <time.h>
 
 #include "myheaders/mesh_struct.h"
 
@@ -201,7 +203,7 @@ void mm_test<dim>::run(){
     }
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer();
-    return;
+
     // Then we need to update the custon mesh structure
     mesh_struct.updateMeshStruct(mesh_dof_handler,
                                  mesh_fe,
@@ -214,17 +216,12 @@ void mm_test<dim>::run(){
                                  pcout);
 
 
-
-
-
-
-
-
-
 }
 
 int main (int argc, char **argv){
     deallog.depth_console (1);
+
+    srand (time(NULL));
 
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
     mm_test<2> mm;

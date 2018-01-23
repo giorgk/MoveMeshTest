@@ -110,9 +110,9 @@ PntsInfo<dim>::PntsInfo(Point<dim-1> p, Zinfo zinfo){
 
 template <int dim>
 void PntsInfo<dim>::add_Zcoord(Zinfo zinfo, double thres){
-    if (zinfo.dof < 0){
-        std::cerr << "You attempt to add a vertex with negative dof" << std::endl;
-    }
+    //if (zinfo.dof < 0){
+    //    std::cerr << "You attempt to add a vertex with negative dof" << std::endl;
+    //}
     std::vector<Zinfo >::iterator it = check_if_z_exists(zinfo, thres);
     if (it != Zlist.end()){
         // SHOULD WE UPDATE ALL THE INFO OR SOME OF IT OR NONE?????????

@@ -220,6 +220,9 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
     outcome.XYind = -99;
     outcome.Zind = -99;
 
+    //if (zinfo.dof < 0)
+    //    std::cerr << "You attepmt to add a point with negative dof" << std::endl << std::flush;
+
     // First search for the XY location in the structure
     int id = check_if_point_exists(p);
     if ( id < 0 ){
@@ -401,6 +404,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     ptemp[d] = it->second.pnt[d];
 
                 // Try to add it in the structure
+                std::cout <<"Zdof: " << zinfo.dof << std::endl;
                 PntIndices id_in_map = add_new_point(ptemp, zinfo);
 
                 if (id_in_map.XYind < 0)
@@ -464,7 +468,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     else{
                         std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
                         for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
-                            it->second.add_Zcoord(*itz, z_thres);
+                            if ( itz->dof >=0 )
+                                it->second.add_Zcoord(*itz, z_thres);
                         }
                     }
                 }

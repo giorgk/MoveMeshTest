@@ -20,7 +20,10 @@ bool sort_Zlist(const T A, T B){ return (A.z < B.z); }
 class Zinfo{
 public:
     /*!
-     * \brief Zinfo construct a new z vertex
+     * \brief Zinfo construct a new z vertex.
+     * Although the ids should not be negative we allow to create Zinfo points with negative ids.
+     * However threre sould always be a check before calling this function if the point is going to be
+     * added to the mesh structure.
      * \param z is the elevation
      * \param dof is the dof
      * \param level is the level of the node
@@ -115,10 +118,12 @@ public:
 Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::map<int,std::pair<int,int> > conn){
     // To construct a new point we need to know the elevation,
     // the dof, the level and whether is a hanging node.
-    if (dof_in <0)
-        std::cerr << "The dof id cannot be negative" << std::endl;
-    if (level_in <0)
-        std::cerr << "The level id cannot be negative" << std::endl;
+    // Although the ids should not be negative we allow to create Zinfo points with negative ids
+    // However threr sould always be a check before calling this function
+    //if (dof_in <0)
+    //    std::cerr << "The dof id cannot be negative" << std::endl;
+    //if (level_in <0)
+    //    std::cerr << "The level id cannot be negative" << std::endl;
 
     z = z_in;
     dof = dof_in;
