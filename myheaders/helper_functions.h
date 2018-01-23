@@ -1,9 +1,15 @@
 #ifndef HELPER_FUNCTIONS_H
 #define HELPER_FUNCTIONS_H
 
+
+#include <deal.II/base/utilities.h>
+
 #include <vector>
 #include <math.h>
 #include <string>
+
+//using namespace dealii;
+
 
 /*!
  * \brief linspace generate a linearly spaced vector between the two numbers min and max
@@ -103,6 +109,7 @@ std::vector<int> get_connected_indices(int ii){
     }
     return out;
 }
+
 
 class RBF{
 public:

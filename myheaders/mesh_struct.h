@@ -112,11 +112,26 @@ public:
     int check_if_point_exists(Point<dim-1> p);
 
     /*!
-     * \brief updateMeshstruct is the heart of this class. for a given parallel triangulation updates the existing
+     * \brief updateMeshstruct is the heart of this class. For a given parallel triangulation updates the existing
      * points or creates new ones.
      *
-     * The method first loops through the locally owned cells and extracts the coordinates and dof for each coordinate
-     * which stores it to #distributed_mesh_vertices.
+     * The method first loops through the locally owned cells and extracts the coordinates and dof for each node
+     * which stores it to #distributed_mesh_vertices. Then keeps in a custom map information for each node of the
+     * triangulation such as : dof, level (level is set only once when the node is first created), whether is a hanging
+     * node, and a list of connections with othe nodes, where for each connection the dof, level and hanging information is also stored.
+     * NOTE: the connected nodes may be more than what they actually are:
+     *
+     *          a       d
+     * -----------------
+     * |___|___|c      |
+     * |   |   |       |
+     * -----------------
+     *         b        e
+     *
+     *
+     * In the example above node a would appear to have connections with d b and c. While this is not correct doesnt seem to
+     * influence the algorithm because the hanging nodes have always the correct number of connections
+     *
      * \param xy_thr this is the threshold for the x-y coordinates. Two point with distance smaller that xy_thr
      * are considered identical. Typically the xy threshold has larger values compared to the z threshold.
      * \param distributed_mesh_vertices is a vector of size #dim x (Number of triangulation vertices).
@@ -175,6 +190,10 @@ public:
 
     //! Update level
     void update_level(int new_level);
+
+    void move_vertices(DoFHandler<dim>& mesh_dof_handler,
+                       TrilinosWrappers::MPI::Vector& mesh_vertices,
+                       int my_rank);
 
 private:
     void dbg_meshStructInfo2D(std::string filename, unsigned int n_proc);
@@ -287,8 +306,9 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     const MappingQ1<dim> mapping;
 
-    pcout << "Distribute mesh dofs..." << std::endl << std::flush;
+    pcout << "Distribute mesh dofs..." << mesh_dof_handler.n_dofs() << std::endl << std::flush;
     mesh_dof_handler.distribute_dofs(mesh_fe);
+    pcout << "dofs 1" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
     mesh_locally_owned = mesh_dof_handler.locally_owned_dofs();
     DoFTools::extract_locally_relevant_dofs (mesh_dof_handler, mesh_locally_relevant);
     mesh_vertices.reinit (mesh_locally_owned, mesh_locally_relevant, mpi_communicator);
@@ -404,7 +424,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
 
     //dbg_meshStructInfo2D("before2D", my_rank);
-    dbg_meshStructInfo3D("before3D", my_rank);
+    dbg_meshStructInfo3D("before3D_Struct", my_rank);
 
 
     if (n_proc > 1){
@@ -455,10 +475,9 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     // IN the new code this may not needed. However it is needed for debuging
     make_dof_ij_map();
-    //dbg_meshStructInfo3D("After3D", my_rank);
 
     set_id_above_below();
-    //dbg_meshStructInfo3D("After3D", my_rank);
+    dbg_meshStructInfo3D("After3D_Struct", my_rank);
 
     std::clock_t end_t = std::clock();
     double elapsed_secs = double(end_t - begin_t)/CLOCKS_PER_SEC;
@@ -618,7 +637,6 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                            ConditionalOStream pcout){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
-    //dbg_meshStructInfo3D("After3D", my_rank);
 
     n_levels = 0;
     typename std::map<int , PntsInfo<dim> >::iterator it;
@@ -631,7 +649,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         for (; itz != it->second.Zlist.end(); ++itz){
             if (itz->level == 0){
                 itz->z = it->second.T*itz->rel_pos - it->second.B*(1.0 - itz->rel_pos);
-                std::cout << itz->z << ", " << it->second.T << std::endl;
+                //std::cout << itz->z << ", " << it->second.T << std::endl;
             }else{
                 // just find which level this node is so that we know how many levels exist
                 // for coming loops
@@ -640,7 +658,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             }
         }
     }
-    dbg_meshStructInfo3D("After3D", my_rank);
+    dbg_meshStructInfo3D("After3D_Elev", my_rank);
 
 
 
@@ -661,11 +679,20 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     mesh_vertices = distributed_mesh_vertices;
 
     //move the actual vertices ------------------------------------------------
+    move_vertices(mesh_dof_handler,
+                  mesh_vertices,
+                  my_rank);
+}
 
+template <int dim>
+void Mesh_struct<dim>::move_vertices(DoFHandler<dim>& mesh_dof_handler,
+                                     TrilinosWrappers::MPI::Vector& mesh_vertices,
+                                     int my_rank){
     // for debuging just print the cell mesh
     const std::string mesh_file_name = ("mesh_after_" +
-                                       Utilities::int_to_string(my_rank+1, 4) +
-                                       ".dat");
+                                        Utilities::int_to_string(my_rank+1, 4) +
+                                        ".dat");
+
     std::ofstream mesh_file;
     mesh_file.open((mesh_file_name.c_str()));
 
@@ -690,10 +717,6 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         }
     }
     mesh_file.close();
-
-    return;
-
-
 }
 
 template <int dim>

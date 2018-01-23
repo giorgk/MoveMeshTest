@@ -202,6 +202,9 @@ void Zinfo::reset(){
     id_top = -9;
     id_bot = -9;
     rel_pos = -9.0;
+    connected_above = false;
+    connected_below = false;
+    dof_conn.clear();
 }
 
 

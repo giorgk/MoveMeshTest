@@ -7,6 +7,7 @@
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/tria_accessor.h>
 #include <deal.II/grid/tria_iterator.h>
+#include <deal.II/distributed/solution_transfer.h>
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/utilities.h>
 
@@ -48,6 +49,7 @@ private:
     Mesh_struct<dim>                            mesh_struct;
 
     void make_grid();
+    void refine_transfer();
 
 
 };
@@ -80,7 +82,7 @@ void mm_test<dim>::make_grid(){
     std::vector<unsigned int>	n_cells;
     if (dim == 2) {
         right_top[0] = 5000; right_top[1] = 300;
-        n_cells.push_back(40); n_cells.push_back(12);
+        n_cells.push_back(20); n_cells.push_back(5);
     }
     else if (dim == 3){
         right_top[0] = 5000; right_top[1] = 5000; right_top[2] = 300;
@@ -92,6 +94,54 @@ void mm_test<dim>::make_grid(){
                                                       left_bottom,
                                                       right_top,
                                                       true);
+}
+
+template <int dim>
+void mm_test<dim>::refine_transfer(){
+    unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
+    // first prepare the triangulation
+    triangulation.prepare_coarsening_and_refinement();
+
+    //prepare vertices for transfering
+    parallel::distributed::SolutionTransfer<dim, TrilinosWrappers::MPI::Vector>mesh_trans(mesh_dof_handler);
+    std::vector<const TrilinosWrappers::MPI::Vector *> x_fs_system (1);
+
+    x_fs_system[0] = &mesh_vertices;
+    mesh_trans.prepare_for_coarsening_and_refinement(x_fs_system);
+
+    std::cout << "Number of active cells Before: "
+                << triangulation.n_active_cells()
+                << std::endl;
+    pcout << "dofs 2" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+    // execute the actual refinement
+    triangulation.execute_coarsening_and_refinement ();
+
+    std::cout << "Number of active cells After: "
+                << triangulation.n_active_cells()
+                << std::endl;
+    pcout << "dofs 3" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+
+    //For the mesh
+    mesh_dof_handler.distribute_dofs(mesh_fe); // distribute the dofs again
+    pcout << "dofs 4" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+    mesh_locally_owned = mesh_dof_handler.locally_owned_dofs();
+    DoFTools::extract_locally_relevant_dofs (mesh_dof_handler, mesh_locally_relevant);
+
+    distributed_mesh_vertices.reinit(mesh_locally_owned, mpi_communicator);
+
+    std::vector<TrilinosWrappers::MPI::Vector *> mesh_tmp (1);
+    mesh_tmp[0] = &(distributed_mesh_vertices);
+
+    mesh_trans.interpolate (mesh_tmp);
+    mesh_vertices.reinit (mesh_locally_owned, mesh_locally_relevant, mpi_communicator);
+    mesh_vertices = distributed_mesh_vertices;
+
+    pcout << "moving vertices " << std::endl << std::flush;
+    mesh_struct.move_vertices(mesh_dof_handler,
+                              mesh_vertices,
+                              my_rank);
+
+
 }
 
 template <int dim>
@@ -125,13 +175,43 @@ void mm_test<dim>::run(){
         // Here we update the top
         it->second.T += rbf.eval(it->second.PNT[0]);
     }
-
+    // THe structure is used to update the elevation
     mesh_struct.updateMeshElevation(mesh_dof_handler,
                                     mesh_constraints,
                                     mesh_vertices,
                                     distributed_mesh_vertices,
                                     mpi_communicator,
                                     pcout);
+    return;
+
+
+    // refine the updated elevations
+    typename parallel::distributed::Triangulation<dim>::active_cell_iterator
+    cell = triangulation.begin_active(),
+    endc = triangulation.end();
+    for (; cell!=endc; ++cell){
+        if (cell->is_locally_owned()){
+            int r = rand() % 100 + 1;
+            if (r < 10)
+                cell->set_refine_flag ();
+            else if(r > 95)
+                cell->set_coarsen_flag();
+        }
+    }
+    // The refine transfer refines and updates the triangulation and mesh_dof_handler
+    refine_transfer();
+
+    // Then we need to update the custon mesh structure
+    mesh_struct.updateMeshStruct(mesh_dof_handler,
+                                 mesh_fe,
+                                 mesh_constraints,
+                                 mesh_locally_owned,
+                                 mesh_locally_relevant,
+                                 mesh_vertices,
+                                 distributed_mesh_vertices,
+                                 mpi_communicator,
+                                 pcout);
+
 
 
 
