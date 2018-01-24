@@ -385,8 +385,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     // MAYBE WE NEED TO ADD A DUMMY LEVEL AND UPDATE DURING A LATER LOOP
                     // IN ADDITION THE CONNECTED DOF IT MAY NOT BE PRESENT IN THE STRUCTURE YET
                     connectedNodes.insert(std::pair<int, std::pair<int,int> >(curr_cell_info[id_conn[i]].dof,
-                                          std::pair<int,int> (curr_cell_info[id_conn[i]].level, // CHANGE THIS
-                                                              curr_cell_info[id_conn[i]].hang)));
+                                          std::pair<int,int> (-9, curr_cell_info[id_conn[i]].hang)));
                 }
 
                 // Now create a zinfo variable
@@ -638,22 +637,45 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
 
     int n_levels = 0;
     typename std::map<int , PntsInfo<dim> >::iterator it;
-
+    std::map<int,std::pair<int,int> >::iterator it_con, it_df;
     // update level 0
-    // This level has no hanging nodes and the update is straight forward
-    // We simply scale the elevations between B and T according to their relative positions
+    // This level has no hanging nodes and the update is straightforward
+    // We simply scale the elevations between B and T according to their relative positions.
+    // In addition we can set the elevations on the nodes that belong to the top or bottom faces.
+    // These nodes are the ones that have no connections below or above respectively and
+    // they are not hanging nodes
     for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
         std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
         for (; itz != it->second.Zlist.end(); ++itz){
             if (itz->level == 0){
-                itz->z = it->second.T*itz->rel_pos - it->second.B*(1.0 - itz->rel_pos);
-                //std::cout << itz->z << ", " << it->second.T << std::endl;
+                std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << ", T: " << it->second.T << std:: endl;
+                itz->z = it->second.T*itz->rel_pos + it->second.B*(1.0 - itz->rel_pos);
+                std::cout << "Znew: " << itz->z << std::endl;
             }else{
                 // just find which level this node is so that we know how many levels exist
-                // for coming loops
+                // for the coming loop
                 if (itz->level > n_levels)
                     n_levels = itz->level;
             }
+
+            if (itz->hanging == 0 & !itz->connected_above){
+                itz->z = it->second.T;
+            }
+             if (itz->hanging == 0 & !itz->connected_below){
+                itz->z = it->second.B;
+            }
+
+            // In addition we will set the levels of the nodes connected to each point
+            for (it_con = itz->dof_conn.begin(); it_con != itz->dof_conn.end(); ++ it_con){
+                it_df = dof_ij.find(it_con->first);
+                if (it_df != dof_ij.end()){
+                    it_con->second.first = PointsMap[it_df->second.first].Zlist[it_df->second.second].level;
+                }else{
+                    std::cerr << "This should not have happened. I couldnt find the node with dof: " << it_con->first << " in the dof_ij map" << std::endl;
+                }
+            }
+
+
         }
     }
 
@@ -664,14 +686,15 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     // with the nodes above and below we can calculate safely its elevation on the second loop.
 
     for (unsigned int i_lvl = 1; i_lvl <= n_levels; ++i_lvl){
-        // loop 1 hanging nodes only
+        // loop 1: hanging nodes only
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
             for (; itz != it->second.Zlist.end(); ++itz){
                 if (itz->level == i_lvl){
                     if (itz->hanging){
                         if (!itz->connected_above || !itz->connected_below){
-                            std::cout << "x: " << it->second.PNT[0] << ", dof: " << itz->dof << std::endl;
+                            std::cout << "-------x: " << it->second.PNT[0] << ", dof: " << itz->dof << " ---------" << std::endl;
+                            std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << std::endl;
                             // loop through its connencetd points and average the z value
                             // of those that have lower level than this node level (i_lvl)
                             double newz = 0; double cntz = 0;
@@ -681,6 +704,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                 if (it_c->second.first < i_lvl){
                                     it_dm = dof_ij.find(it_c->first);
                                     if (it_dm != dof_ij.end()){
+                                        std::cout << "dof: " << it_c->first << ", z: " << PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z << std::endl;
                                         newz += PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z;
                                         cntz += 1.0;
                                     }
@@ -690,26 +714,43 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                     }
                                 }
                             }
-                            itz->z = newz / cntz;
+                            if (cntz < 1){
+                                std::cerr << " no conections found for the node with dof: " << itz->dof << std::endl;
+                            }
+                            else{
+                                itz->z = newz / cntz;
+                                std::cout << "Znew: " << itz->z << std::endl;
+                            }
                         }
                     }
                 }
             }
         }
-        // loop 2 change all the remaining elevations on this level
+        // loop 2: change all the remaining elevations on this level
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
             for (; itz != it->second.Zlist.end(); ++itz){
                 if (itz->level == i_lvl){
-                    if (!itz->connected_above && itz->connected_below){
+                    if (itz->connected_above && itz->connected_below){
+                        //std::cout << "-------x: " << it->second.PNT[0] << ", dof: " << itz->dof << " ---------" << std::endl;
+                        //std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << std::endl;
                         double zb = it->second.Zlist[itz->id_bot].z;
                         double zt;
-                        if (it->second.Zlist[itz->id_top].hanging == 0)
-                            zt = it->second.T;
-                        else
+                        //if (it->second.Zlist[itz->id_top].hanging == 0)
+                        //    zt = it->second.T;
+                        //else
                             zt = it->second.Zlist[itz->id_top].z;
-                        itz->z = zt*itz->rel_pos - zb*(1.0 - itz->rel_pos);
+                        //std:: cout << "zt: " << zt << ", zb: " << zb << " dof(t,b): (" << itz->dof_top << "," << itz->dof_bot
+                        //           << "), oid(t,b): " << itz->id_top << "," << itz->id_bot << ")" << std::endl;
+                        itz->z = zt*itz->rel_pos + zb*(1.0 - itz->rel_pos);
+                        //std::cout << "Znew: " << itz->z << std::endl;
                     }
+//                    else if (itz->hanging == 0 && !itz->connected_above){
+//                        itz->z = it->second.T*itz->rel_pos + it->second.Zlist[itz->id_bot].z * (1.0 - itz->rel_pos);
+//                    }
+//                    else if (itz->hanging == 0 && !itz->connected_below){
+//                        itz->z = it->second.Zlist[itz->id_top].z * itz->rel_pos + it->second.B*(1.0 - itz->rel_pos);
+//                    }
                 }
             }
         }
