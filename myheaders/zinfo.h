@@ -57,7 +57,11 @@ public:
 
     //! This method returns true if the point is connected to this one
     //! Essentially is considered connected if the point in question can be found
-    //! in the #dof_conn map of connected nodes
+    //! in the #dof_conn map of connected nodes.
+    //! In practice it appears that a particular node maybe connected with one node
+    //! in one cell and not connected in an another cell if the cells that share the node
+    //! have different level. However we really need this information only for the hanging
+    //! nodes where that never happens,
     bool connected_with(int dof_in);
 
 //    //! Copies the zinfo of the vertex to this vertex. The operation does that blindly
