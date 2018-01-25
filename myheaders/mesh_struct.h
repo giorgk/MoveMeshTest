@@ -143,7 +143,8 @@ public:
                          TrilinosWrappers::MPI::Vector& mesh_vertices,
                          TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
                          MPI_Comm&  mpi_communicator,
-                         ConditionalOStream pcout);
+                         ConditionalOStream pcout,
+                         std::string prefix);
 
     //! Once the #PointsMap::T and #PointsMap::B have been set to a new elevation and have also
     //! the relative positions calculated we can use this method to update the z elevations of the
@@ -155,7 +156,8 @@ public:
                              TrilinosWrappers::MPI::Vector& mesh_vertices,
                              TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
                              MPI_Comm&  mpi_communicator,
-                             ConditionalOStream pcout);
+                             ConditionalOStream pcout,
+                             std::string prefix);
 
     //! resets all the information that is contained except the coordinates and the level of the points
     void reset();
@@ -188,7 +190,8 @@ public:
 
     void move_vertices(DoFHandler<dim>& mesh_dof_handler,
                        TrilinosWrappers::MPI::Vector& mesh_vertices,
-                       int my_rank);
+                       int my_rank,
+                       std::string prefix);
 
 private:
     void dbg_meshStructInfo2D(std::string filename, unsigned int n_proc);
@@ -286,7 +289,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                                        TrilinosWrappers::MPI::Vector& mesh_vertices,
                                        TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
                                        MPI_Comm&  mpi_communicator,
-                                       ConditionalOStream pcout){
+                                       ConditionalOStream pcout,
+                                       std::string prefix){
     // Use this to time the operation. Note that this is a very expensive operation but nessecary
     std::clock_t begin_t = std::clock();
     // get the rank and processor id just for output display
@@ -422,7 +426,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
 
     //dbg_meshStructInfo2D("before2D", my_rank);
-    dbg_meshStructInfo3D("before3D_Struct", my_rank);
+    dbg_meshStructInfo3D("before3D_Struct_" + prefix + "_", my_rank);
 
 
     if (n_proc > 1){
@@ -478,13 +482,14 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     make_dof_ij_map();
 
     set_id_above_below();
-    dbg_meshStructInfo3D("After3D_Struct", my_rank);
+    dbg_meshStructInfo3D("After3D_Struct_" + prefix + "_", my_rank);
 
     std::clock_t end_t = std::clock();
     double elapsed_secs = double(end_t - begin_t)/CLOCKS_PER_SEC;
     //std::cout << "====================================================" << std::endl;
     std::cout << "I'm rank " << my_rank << " and spend " << elapsed_secs << " sec on Updating XYZ" << std::endl;
     //std::cout << "====================================================" << std::endl;
+    MPI_Barrier(mpi_communicator);
 }
 
 template <int dim>
@@ -635,7 +640,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                            TrilinosWrappers::MPI::Vector& mesh_vertices,
                                            TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
                                            MPI_Comm&  mpi_communicator,
-                                           ConditionalOStream pcout){
+                                           ConditionalOStream pcout,
+                                           std::string prefix){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
 
@@ -771,7 +777,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
 
     }// loop through levels
 
-    dbg_meshStructInfo3D("After3D_Elev", my_rank);
+    dbg_meshStructInfo3D("After3D_Elev_" + prefix + "_", my_rank);
 
 
 
@@ -797,15 +803,16 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     //move the actual vertices ------------------------------------------------
     move_vertices(mesh_dof_handler,
                   mesh_vertices,
-                  my_rank);
+                  my_rank, prefix);
 }
 
 template <int dim>
 void Mesh_struct<dim>::move_vertices(DoFHandler<dim>& mesh_dof_handler,
                                      TrilinosWrappers::MPI::Vector& mesh_vertices,
-                                     int my_rank){
+                                     int my_rank,
+                                     std::string prefix){
     // for debuging just print the cell mesh
-    const std::string mesh_file_name = ("mesh_after_" +
+    const std::string mesh_file_name = ("mesh_after_" + prefix + "_" +
                                         Utilities::int_to_string(my_rank+1, 4) +
                                         ".dat");
 

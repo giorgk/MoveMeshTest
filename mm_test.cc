@@ -51,7 +51,7 @@ private:
     Mesh_struct<dim>                            mesh_struct;
 
     void make_grid();
-    void refine_transfer();
+    void refine_transfer(std::string prefix);
 
 
 };
@@ -99,7 +99,7 @@ void mm_test<dim>::make_grid(){
 }
 
 template <int dim>
-void mm_test<dim>::refine_transfer(){
+void mm_test<dim>::refine_transfer(std::string prefix){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
     // first prepare the triangulation
     triangulation.prepare_coarsening_and_refinement();
@@ -142,7 +142,7 @@ void mm_test<dim>::refine_transfer(){
     pcout << "moving vertices " << std::endl << std::flush;
     mesh_struct.move_vertices(mesh_dof_handler,
                               mesh_vertices,
-                              my_rank);
+                              my_rank, prefix);
 
 
 }
@@ -158,7 +158,8 @@ void mm_test<dim>::run(){
                                  mesh_vertices,
                                  distributed_mesh_vertices,
                                  mpi_communicator,
-                                 pcout);
+                                 pcout,
+                                 "iter0");
 
 
 
@@ -185,7 +186,8 @@ void mm_test<dim>::run(){
                                     mesh_vertices,
                                     distributed_mesh_vertices,
                                     mpi_communicator,
-                                    pcout);
+                                    pcout,
+                                    "iter0");
 
 
 
@@ -198,14 +200,14 @@ void mm_test<dim>::run(){
     for (; cell!=endc; ++cell){
         if (cell->is_locally_owned()){
             int r = rand() % 100 + 1;
-            if (r < 10)
+            if (r < 20)
                 cell->set_refine_flag ();
             else if(r > 95)
                 cell->set_coarsen_flag();
         }
     }
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
-    refine_transfer();
+    refine_transfer("refine0");
 
 
     // Then we need to update the custon mesh structure after any change of the triangulation
@@ -217,9 +219,9 @@ void mm_test<dim>::run(){
                                  mesh_vertices,
                                  distributed_mesh_vertices,
                                  mpi_communicator,
-                                 pcout);
+                                 pcout, "iter1");
 
-
+    std::cout << "------------------------------------------------------------" << std::endl;
 
     // modify top function
     rbf.centers.push_back(500);
@@ -242,7 +244,7 @@ void mm_test<dim>::run(){
                                     mesh_vertices,
                                     distributed_mesh_vertices,
                                     mpi_communicator,
-                                    pcout);
+                                    pcout,"iter1");
     return;
 
     // ------------------Second refinment iteration ---------------------------------------------------
@@ -261,7 +263,7 @@ void mm_test<dim>::run(){
             }
         }
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
-        refine_transfer();
+        refine_transfer("refine" + i+2);
 
         // Then we need to update the custon mesh structure after any change of the triangulation
         mesh_struct.updateMeshStruct(mesh_dof_handler,
@@ -272,7 +274,7 @@ void mm_test<dim>::run(){
                                      mesh_vertices,
                                      distributed_mesh_vertices,
                                      mpi_communicator,
-                                     pcout);
+                                     pcout, "iter" + i+2);
 
         rbf.weights.clear();
         for (unsigned int i = 0; i < rbf.centers.size(); ++i)
@@ -289,7 +291,7 @@ void mm_test<dim>::run(){
                                         mesh_vertices,
                                         distributed_mesh_vertices,
                                         mpi_communicator,
-                                        pcout);
+                                        pcout, "iter" + i+2);
     }
 
 
@@ -304,21 +306,6 @@ int main (int argc, char **argv){
     srand (time(NULL));
 
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
-
-    std::vector<int> temp;
-    for (int i = 0; i < 10; ++i){
-        temp.push_back(i);
-    }
-    std::cout << "Map size: " << temp.size() << std::endl;
-
-    std::vector<int>::iterator it;
-    for (int i = temp.size()-1; i >=0; --i){
-        if (i == 3 || i == 6 || i == 9){
-            temp.erase(temp.begin()+i);
-        }
-    }
-
-    std::cout << "Map size: " << temp.size() << std::endl;
 
     mm_test<2> mm;
     mm.run();
