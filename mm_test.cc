@@ -161,6 +161,7 @@ void mm_test<dim>::run(){
                                  pcout);
 
 
+
     // Set Top and Bottom elevation
     RBF rbf;
     rbf.centers.push_back(1000);
@@ -188,6 +189,8 @@ void mm_test<dim>::run(){
 
 
 
+
+
     // refine the updated elevations
     typename parallel::distributed::Triangulation<dim>::active_cell_iterator
     cell = triangulation.begin_active(),
@@ -204,6 +207,7 @@ void mm_test<dim>::run(){
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer();
 
+
     // Then we need to update the custon mesh structure after any change of the triangulation
     mesh_struct.updateMeshStruct(mesh_dof_handler,
                                  mesh_fe,
@@ -214,6 +218,8 @@ void mm_test<dim>::run(){
                                  distributed_mesh_vertices,
                                  mpi_communicator,
                                  pcout);
+
+
 
     // modify top function
     rbf.centers.push_back(500);
@@ -237,6 +243,56 @@ void mm_test<dim>::run(){
                                     distributed_mesh_vertices,
                                     mpi_communicator,
                                     pcout);
+    return;
+
+    // ------------------Second refinment iteration ---------------------------------------------------
+
+    for (int i = 0; i < 4; ++i){
+        // refine the updated elevations
+        cell = triangulation.begin_active(),
+        endc = triangulation.end();
+        for (; cell!=endc; ++cell){
+            if (cell->is_locally_owned()){
+                int r = rand() % 100 + 1;
+                if (r < 10)
+                    cell->set_refine_flag ();
+                else if(r > 95)
+                    cell->set_coarsen_flag();
+            }
+        }
+        // The refine transfer refines and updates the triangulation and mesh_dof_handler
+        refine_transfer();
+
+        // Then we need to update the custon mesh structure after any change of the triangulation
+        mesh_struct.updateMeshStruct(mesh_dof_handler,
+                                     mesh_fe,
+                                     mesh_constraints,
+                                     mesh_locally_owned,
+                                     mesh_locally_relevant,
+                                     mesh_vertices,
+                                     distributed_mesh_vertices,
+                                     mpi_communicator,
+                                     pcout);
+
+        rbf.weights.clear();
+        for (unsigned int i = 0; i < rbf.centers.size(); ++i)
+            rbf.weights.push_back(fRand(-100, 100));
+
+        for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
+            it->second.B = 0;
+            it->second.T = 300;
+            it->second.T += rbf.eval(it->second.PNT[0]);
+        }
+
+        mesh_struct.updateMeshElevation(mesh_dof_handler,
+                                        mesh_constraints,
+                                        mesh_vertices,
+                                        distributed_mesh_vertices,
+                                        mpi_communicator,
+                                        pcout);
+    }
+
+
 
 
 
@@ -248,6 +304,22 @@ int main (int argc, char **argv){
     srand (time(NULL));
 
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+
+    std::vector<int> temp;
+    for (int i = 0; i < 10; ++i){
+        temp.push_back(i);
+    }
+    std::cout << "Map size: " << temp.size() << std::endl;
+
+    std::vector<int>::iterator it;
+    for (int i = temp.size()-1; i >=0; --i){
+        if (i == 3 || i == 6 || i == 9){
+            temp.erase(temp.begin()+i);
+        }
+    }
+
+    std::cout << "Map size: " << temp.size() << std::endl;
+
     mm_test<2> mm;
     mm.run();
 

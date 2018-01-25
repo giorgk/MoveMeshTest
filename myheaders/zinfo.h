@@ -163,6 +163,7 @@ void Zinfo::update_main_info(Zinfo newZ){
     }
     dof = newZ.dof;
     hanging = newZ.hanging;
+    used = newZ.used;
     Add_connections(newZ.dof_conn);
 }
 
@@ -205,6 +206,7 @@ void Zinfo::reset(){
     id_below = -9;
 
     used = false;
+    isZset = false;
 
     dof_top = -9;
     dof_bot= -9;

@@ -170,7 +170,7 @@ public:
     //! (MAYBE THIS SHOULD SET THE DOF of the top/bottom node and not the elevation
     void set_id_above_below();
 
-    //! This creates the #dof_ij map.
+    //! This creates the #dof_ij map. In addition removes points in the struct that are not used
     void make_dof_ij_map();
 
     //! This method calculates the top and bottom elevation on the points of the #PointsMap
@@ -222,6 +222,7 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
     if ( id < 0 ){
         // this is a new point and we add it to the map
         PntsInfo<dim> tempPnt(p, zinfo);
+        zinfo.used = true;
         PointsMap[_counter] = tempPnt;
 
         //... to the Cgal structure
@@ -240,6 +241,7 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
         _counter++;
     }else if (id >=0){
         typename std::map<int, PntsInfo<dim> >::iterator it = PointsMap.find(id);
+        zinfo.used = true;
         it->second.add_Zcoord(zinfo, z_thres);
         outcome.XYind = it->first;
     }
@@ -460,8 +462,10 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     else{
                         std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
                         for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
-                            if ( itz->dof >=0 )
+                            if ( itz->dof >=0 ){
+                                itz->used = true;
                                 it->second.add_Zcoord(*itz, z_thres);
+                            }
                         }
                     }
                 }
@@ -648,9 +652,10 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
         for (; itz != it->second.Zlist.end(); ++itz){
             if (itz->level == 0){
-                std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << ", T: " << it->second.T << std:: endl;
+                //std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << ", T: " << it->second.T << std:: endl;
                 itz->z = it->second.T*itz->rel_pos + it->second.B*(1.0 - itz->rel_pos);
-                std::cout << "Znew: " << itz->z << std::endl;
+                itz->isZset = true;
+                //std::cout << "Znew: " << itz->z << std::endl;
             }else{
                 // just find which level this node is so that we know how many levels exist
                 // for the coming loop
@@ -658,11 +663,13 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                     n_levels = itz->level;
             }
 
-            if (itz->hanging == 0 & !itz->connected_above){
+            if (itz->hanging == 0 && !itz->connected_above){
                 itz->z = it->second.T;
+                itz->isZset = true;
             }
-             if (itz->hanging == 0 & !itz->connected_below){
+             if (itz->hanging == 0 && !itz->connected_below){
                 itz->z = it->second.B;
+                itz->isZset = true;
             }
 
             // In addition we will set the levels of the nodes connected to each point
@@ -671,7 +678,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 if (it_df != dof_ij.end()){
                     it_con->second.first = PointsMap[it_df->second.first].Zlist[it_df->second.second].level;
                 }else{
-                    std::cerr << "This should not have happened. I couldnt find the node with dof: " << it_con->first << " in the dof_ij map" << std::endl;
+                    std::cerr << "I'm proc " << my_rank << " and I couldnt find the node with dof: " << it_con->first << " in my dof_ij map" << std::endl;
                 }
             }
 
@@ -693,8 +700,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 if (itz->level == i_lvl){
                     if (itz->hanging){
                         if (!itz->connected_above || !itz->connected_below){
-                            std::cout << "-------x: " << it->second.PNT[0] << ", dof: " << itz->dof << " ---------" << std::endl;
-                            std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << std::endl;
+                            //std::cout << "-------x: " << it->second.PNT[0] << ", dof: " << itz->dof << " ---------" << std::endl;
+                            //std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << std::endl;
                             // loop through its connencetd points and average the z value
                             // of those that have lower level than this node level (i_lvl)
                             double newz = 0; double cntz = 0;
@@ -719,7 +726,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                             }
                             else{
                                 itz->z = newz / cntz;
-                                std::cout << "Znew: " << itz->z << std::endl;
+                                itz->isZset = true;
+                                //std::cout << "Znew: " << itz->z << std::endl;
                             }
                         }
                     }
@@ -734,12 +742,18 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                     if (itz->connected_above && itz->connected_below){
                         //std::cout << "-------x: " << it->second.PNT[0] << ", dof: " << itz->dof << " ---------" << std::endl;
                         //std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << std::endl;
+                        if (it->second.Zlist[itz->id_bot].isZset == false)
+                            std::cout << itz->dof << " will use " << itz->dof_bot << " value which has not been yet set" << std::endl;
+
                         double zb = it->second.Zlist[itz->id_bot].z;
                         double zt;
                         //if (it->second.Zlist[itz->id_top].hanging == 0)
                         //    zt = it->second.T;
                         //else
-                            zt = it->second.Zlist[itz->id_top].z;
+                        if (it->second.Zlist[itz->id_top].isZset == false)
+                            std::cout << itz->dof << " will use " << itz->dof_top << " value which has not been yet set" << std::endl;
+
+                        zt = it->second.Zlist[itz->id_top].z;
                         //std:: cout << "zt: " << zt << ", zb: " << zb << " dof(t,b): (" << itz->dof_top << "," << itz->dof_bot
                         //           << "), oid(t,b): " << itz->id_top << "," << itz->id_bot << ")" << std::endl;
                         itz->z = zt*itz->rel_pos + zb*(1.0 - itz->rel_pos);
@@ -839,10 +853,18 @@ template  <int dim>
 void Mesh_struct<dim>::make_dof_ij_map(){
     dof_ij.clear();
     typename std::map<int , PntsInfo<dim> >::iterator it;
-    for (it = PointsMap.begin(); it != PointsMap.end(); ++it)
+    std::vector<Zinfo >::iterator itz;
+    for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+        for (int k = it->second.Zlist.size() - 1; k >= 0; --k){
+            if (it->second.Zlist[k].used == false){
+                it->second.Zlist.erase(it->second.Zlist.begin() + k);
+            }
+        }
         for (unsigned int k = 0; k < it->second.Zlist.size(); ++k){
             dof_ij[it->second.Zlist[k].dof] = std::pair<int,int> (it->first,k);
         }
+    }
+
 }
 
 template <int dim>
