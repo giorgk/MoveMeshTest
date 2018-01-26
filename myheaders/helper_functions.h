@@ -8,6 +8,7 @@
 #include <vector>
 #include <math.h>
 #include <string>
+#include "mpi_help.h"
 
 using namespace dealii;
 
@@ -111,6 +112,87 @@ std::vector<int> get_connected_indices(int ii){
     return out;
 }
 
+template <int dim>
+void create_outline_polygon(std::vector<std::vector<Point<dim-1>>> &pointdata, MPI_Comm  mpi_communicator){
+    unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
+    unsigned int n_proc = Utilities::MPI::n_mpi_processes(mpi_communicator);
+    if (dim == 2){
+        Point<dim-1> minX; minX[0] = 1000000000;
+        Point<dim-1> maxX; maxX[0] = -1000000000;
+        for (unsigned int i = 0; i <pointdata[my_rank].size(); ++i){
+            if (pointdata[my_rank][i][0] < minX[0])
+                minX[0] = pointdata[my_rank][i][0];
+            if (pointdata[my_rank][i][0] > maxX[0])
+                maxX[0] = pointdata[my_rank][i][0];
+        }
+        pointdata[my_rank].clear();
+        pointdata[my_rank].push_back(minX);
+        pointdata[my_rank].push_back(maxX);
+        std::cout << "I'm rank " << my_rank << " and my limits are: (" << pointdata[my_rank][0][0] << ", " << pointdata[my_rank][1][0] << ")" << std::endl;
+
+    }else if (dim == 3){
+        std::cerr << "Not implemented yet" << std::endl;
+    }else{
+        std::cerr << "Unsuported dimension. Has to be 2D or 3D" << std::endl;
+    }
+
+    // Send my polygon outline to all processors
+    std::vector<std::vector<double> > serialized_points(n_proc);
+    for (unsigned int i = 0; i < pointdata[my_rank].size(); ++ i){
+        serialized_points[my_rank].push_back(pointdata[my_rank][i][0]);
+        if (dim == 3)
+            serialized_points[my_rank].push_back(pointdata[my_rank][i][1]);
+    }
+
+    //std::cout << "I'm " << my_rank << " and have " << serialized_points[my_rank].size() << " serialized points" << std::endl;
+
+    std::vector <int> Npoints_per_polygon_proc(n_proc);
+    Send_receive_size(serialized_points[my_rank].size(), n_proc, Npoints_per_polygon_proc, mpi_communicator);
+    //for (int i = 0; i < n_proc; ++i)
+    //    std::cout << "I'm " << my_rank << " and proc " << i << " has " << Npoints_per_polygon_proc[i] << " points" << std::endl;
+
+
+    Sent_receive_data<double>(serialized_points, Npoints_per_polygon_proc, my_rank, mpi_communicator, MPI_DOUBLE);
+    //if (my_rank == 3){
+    //    for (int i = 0; i < n_proc; ++i){
+    //        std::cout << i << " : " << serialized_points[i][0] << ", " << serialized_points[i][1] << std::endl;
+    //    }
+    //}
+
+    // gather data from the other processors
+    for (unsigned int i = 0; i < n_proc; ++i){
+        if (i == my_rank)
+            continue;
+        for (unsigned int j = 0; j < Npoints_per_polygon_proc[my_rank];){
+            Point<dim-1> tempP;
+            tempP[0] = serialized_points[i][j]; j++;
+            if (dim == 3){
+                tempP[1] = serialized_points[i][j]; j++;
+            }
+            pointdata[i].push_back(tempP);
+        }
+    }
+}
+
+template <int dim>
+std::vector<int> send_point(Point<dim-1> p, std::vector<std::vector<Point<dim-1>>> pointdata, int my_rank){
+    std::vector<int> shared_proc;
+    if (dim == 2){
+        for (unsigned int i = 0; i < pointdata.size(); ++i){
+            if (i == my_rank)
+                continue;
+            double xmin = pointdata[i][0][0];
+            double xmax = pointdata[i][1][0];
+            if (p[0] > xmin-0.01 && p[0] < xmax + 0.01){
+                shared_proc.push_back(i);
+            }
+        }
+    } else if (dim == 3) {
+        std::cerr << "3D not implemented yet" << std::endl;
+    }
+    return shared_proc;
+}
+
 
 class RBF{
 public:
@@ -124,7 +206,7 @@ public:
 
    void assign_centers(std::vector<double> cntrs, std::vector<double> wdth);
 
-   void assign_weights(MPI_Comm&  mpi_communicator);
+   void assign_weights(MPI_Comm  mpi_communicator);
 
 };
 
@@ -154,7 +236,7 @@ double fRand(double fMin, double fMax)
     return fMin + f * (fMax - fMin);
 }
 
-void RBF::assign_weights(MPI_Comm&  mpi_communicator){
+void RBF::assign_weights(MPI_Comm  mpi_communicator){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
     MPI_Barrier(mpi_communicator);
     if (my_rank == 0){

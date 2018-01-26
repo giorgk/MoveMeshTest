@@ -269,7 +269,7 @@ void mm_test<dim>::run(){
         }
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
         refine_transfer("refine" + std::to_string(i+1));
-
+        return;
         if (i == 2)
             return;
 

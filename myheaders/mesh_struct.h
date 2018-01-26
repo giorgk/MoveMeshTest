@@ -10,6 +10,8 @@
 #include <deal.II/lac/trilinos_vector.h>
 #include <deal.II/base/conditional_ostream.h>
 
+#include <algorithm>
+
 #include "zinfo.h"
 #include "pnt_info.h"
 #include "cgal_functions.h"
@@ -336,7 +338,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
 
     // Make a list of points in x-y that
-    std::vector<Point<dim-1> > pointsXY;
+    std::vector<std::vector<Point<dim-1> > > pointsXY(n_proc);
 
     pcout << "Update XYZ structure..." << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
@@ -413,20 +415,23 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 PntIndices id_in_map = add_new_point(ptemp, zinfo);
 
                 // This will create a list of XY points on every processor
-                if (id_in_map.isNew)
-                    pointsXY.push_back(ptemp);
+                //if (id_in_map.isNew)
+                //pointsXY[my_rank].push_back(ptemp);
 
-                if (id_in_map.XYind < 0)
-                    std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
-                else{
-                    bool tf = any_ghost_neighbor<dim>(cell);
-                    if (tf)
-                        PointsMap[id_in_map.XYind].have_to_send = 1;
-                }
+                //if (id_in_map.XYind < 0)
+                //    std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
+                //else{
+                //    XYind_p_map.insert(std::pair<int,Point<dim-1>>(id_in_map.XYind,ptemp ));
+                //    bool tf = any_ghost_neighbor<dim>(cell);
+                //    if (tf)
+                //        PointsMap[id_in_map.XYind].have_to_send = 1;
+                //}
             }
             //pcout << "----------------------------------------------------------------" << std::endl;
         }
     }
+
+
 
     make_dof_ij_map();
 
@@ -441,7 +446,25 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
     if (n_proc > 1){
-        // First we will
+        // We will make a list of points XY point that this processor holds.
+        // This list is used to determine the horizontal outline points that this processor occupies
+        typename std::map<int ,  PntsInfo<dim> >::iterator it;
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            pointsXY[my_rank].push_back(it->second.PNT);
+        }
+
+        // Next we will create polygons outlines from the points that each processor currently has
+        // This function receives a list os single points and creates a polygon. Then the polygons
+        // are transfered to all processors
+        create_outline_polygon<dim>(pointsXY, mpi_communicator);
+        // Identify which points each processor would need based on the outline polygons
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            // As we loop through the points we identify which processors this point
+            // lay inside their polygons
+            it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXY, my_rank);
+        }
+
+
 
 
 
@@ -452,9 +475,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
         std::vector< std::vector<PntsInfo<dim> > > sharedPoints(n_proc);
 
-        typename std::map<int ,  PntsInfo<dim> >::iterator it;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            if (it->second.have_to_send == 1){
+            if (it->second.shared_proc.size() > 0){
                 // IN the old code I was checking for positive dofs.
                 // I have to see whether I should check that again
                 sharedPoints[my_rank].push_back(it->second);
@@ -468,18 +490,29 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
         SendReceive_PntsInfo(sharedPoints, my_rank, n_proc, z_thres, mpi_communicator);
 
-        // Loop through the received points and get the ones my_rank needs
+        // Loop through the received points and get the ones my_rank should get
         for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
             if (i_proc == my_rank) continue;// my_rank already knows these poitns
 
             for (unsigned int i = 0; i < sharedPoints[i_proc].size(); ++i){
-                int id = check_if_point_exists(sharedPoints[i_proc][i].PNT);
-                if (id >= 0){
-                    it = PointsMap.find(id);
-                    if (it == PointsMap.end())
-                        std::cerr << "There must be an entry under this key" << std::endl;
-                    else{
+                // if my_rank is in the list of processors that should have this point I should get it
+                //https://stackoverflow.com/questions/571394/how-to-find-out-if-an-item-is-present-in-a-stdvector
+                if (std::find(sharedPoints[i_proc][i].shared_proc.begin(),sharedPoints[i_proc][i].shared_proc.end(),my_rank) != sharedPoints[i_proc][i].shared_proc.end()){
+                    int id = check_if_point_exists(sharedPoints[i_proc][i].PNT);
+                    if (id >= 0){
+                        it = PointsMap.find(id);
                         std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
+                        for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
+                            if ( itz->dof >=0 ){
+                                itz->used = true;
+                                it->second.add_Zcoord(*itz, z_thres);
+                            }
+                        }
+                    }else{
+                        std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
+                        PntIndices indices = add_new_point(sharedPoints[i_proc][i].PNT,*itz);
+                        itz++;
+                        it = PointsMap.find(indices.XYind);
                         for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
                             if ( itz->dof >=0 ){
                                 itz->used = true;
@@ -488,6 +521,21 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                         }
                     }
                 }
+//                int id = check_if_point_exists(sharedPoints[i_proc][i].PNT);
+//                if (id >= 0){
+//                    it = PointsMap.find(id);
+//                    if (it == PointsMap.end())
+//                        std::cerr << "There must be an entry under this key" << std::endl;
+//                    else{
+//                        std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
+//                        for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
+//                            if ( itz->dof >=0 ){
+//                                itz->used = true;
+//                                it->second.add_Zcoord(*itz, z_thres);
+//                            }
+//                        }
+//                    }
+//                }
             }
         }
         MPI_Barrier(mpi_communicator);
@@ -875,17 +923,26 @@ template  <int dim>
 void Mesh_struct<dim>::make_dof_ij_map(){
     dof_ij.clear();
     typename std::map<int , PntsInfo<dim> >::iterator it;
-    std::vector<Zinfo >::iterator itz;
+    std::vector<int> deletedPoints;
     for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
         for (int k = it->second.Zlist.size() - 1; k >= 0; --k){
             if (it->second.Zlist[k].used == false){
                 it->second.Zlist.erase(it->second.Zlist.begin() + k);
             }
         }
+        if (it->second.Zlist.size() == 0){
+            deletedPoints.push_back(it->first);
+        }
         for (unsigned int k = 0; k < it->second.Zlist.size(); ++k){
             dof_ij[it->second.Zlist[k].dof] = std::pair<int,int> (it->first,k);
         }
     }
+
+    // Delete any empty XY points
+    for (unsigned int i = 0; i < deletedPoints.size(); ++i){
+        PointsMap.erase(deletedPoints[i]);
+    }
+
 
 }
 

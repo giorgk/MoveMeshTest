@@ -131,7 +131,14 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
             dbl_data[my_rank].push_back(Pnts[my_rank][i].PNT[1]);
         }
 
-        int_data[my_rank].push_back(Pnts[my_rank][i].Zlist.size()); //For each of the pnts send the number of Z coordinates Nz in the list
+        // For each pnt set the number of processors that share this point
+        int_data[my_rank].push_back(Pnts[my_rank][i].shared_proc.size());
+        // Next send the processors that should take this point
+        for (unsigned int ii = 0; ii < Pnts[my_rank][i].shared_proc.size(); ++ii){
+            int_data[my_rank].push_back(Pnts[my_rank][i].shared_proc[ii]);
+        }
+        // The send the number of Z coordinates Nz in the list
+        int_data[my_rank].push_back(Pnts[my_rank][i].Zlist.size()); //number of Z coordinates Nz in the list
         for (unsigned int j = 0; j < Pnts[my_rank][i].Zlist.size(); ++j){ // then send the follwong info Nz times
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].hanging); // hanging
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].dof);     // dof
@@ -186,6 +193,11 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
             if (dim == 3){
                 y = get_v<double>(dbl_data, i_proc, d_cnt);d_cnt++;
             }
+            int Nshared_proc = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+            std::vector<int> shared_proc;
+            for (unsigned int ii = 0; ii < Nshared_proc; ++ii){
+                shared_proc.push_back(get_v<int>(int_data, i_proc, i_cnt)); i_cnt++;
+            }
 
             int Nz = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
             //if (my_rank == dbg_proc) std::cout << "......I'm rank " << my_rank << ", Nz: " << Nz << std::endl;
@@ -220,6 +232,7 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
 
                 if (j == 0){
                     PntsInfo<dim> pntinfo(p,zinfo);
+                    pntinfo.shared_proc = shared_proc;
                     Pnts[i_proc].push_back(pntinfo);
                 }else{
                     Pnts[i_proc][Pnts[i_proc].size()-1].add_Zcoord(zinfo, z_thres);

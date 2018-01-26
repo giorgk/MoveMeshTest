@@ -57,6 +57,8 @@ public:
     */
     int have_to_send;
 
+    std::vector <int> shared_proc;
+
     /*!
      * \brief it is possible after a reset that not all the listed nodes have positive dof
      * Actually the vertices with negative id either no longer exist due to coarsening
@@ -96,6 +98,7 @@ PntsInfo<dim>::PntsInfo(){
     B = -9999.0;
     Zlist.clear();
     have_to_send = 0;
+    shared_proc.clear();
 }
 
 template <int dim>
@@ -106,6 +109,7 @@ PntsInfo<dim>::PntsInfo(Point<dim-1> p, Zinfo zinfo){
     T = -9999.0;
     B = -9999.0;
     have_to_send = 0;
+    shared_proc.clear();
 }
 
 template <int dim>
@@ -145,6 +149,7 @@ void PntsInfo<dim>::reset(){
     have_to_send = 0;
     T = -9999.0;
     B = -9999.0;
+    shared_proc.clear();
     typename std::vector<Zinfo>::iterator it = Zlist.begin();
     for (; it != Zlist.end(); ++it)
         it->reset();
