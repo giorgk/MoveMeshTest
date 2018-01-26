@@ -149,6 +149,8 @@ void mm_test<dim>::refine_transfer(std::string prefix){
 
 template <int dim>
 void mm_test<dim>::run(){
+    unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
+
     // after we generated the mesh we update the our custom Mesh structure
     mesh_struct.updateMeshStruct(mesh_dof_handler,
                                  mesh_fe,
@@ -165,12 +167,13 @@ void mm_test<dim>::run(){
 
     // Set Top and Bottom elevation
     RBF rbf;
-    rbf.centers.push_back(1000);
-    rbf.centers.push_back(2000);
-    rbf.centers.push_back(3000);
-    rbf.centers.push_back(4000);
-    for (unsigned int i = 0; i < rbf.centers.size(); ++i)
-        rbf.weights.push_back(fRand(-100, 100));
+    std::vector<double> cntrs, wdth;
+    cntrs.push_back(1000); wdth.push_back(0.001);
+    cntrs.push_back(2000); wdth.push_back(0.001);
+    cntrs.push_back(3000); wdth.push_back(0.001);
+    cntrs.push_back(4000);wdth.push_back(0.001);
+    rbf.assign_centers(cntrs,wdth);
+    rbf.assign_weights(mpi_communicator);
 
     // Set initial top bottom elebation elevation
     typename std::map<int , PntsInfo<dim> >::iterator it;
@@ -180,6 +183,7 @@ void mm_test<dim>::run(){
         // Here we update the top
         it->second.T += rbf.eval(it->second.PNT[0]);
     }
+     std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
     // THe structure is used to update the elevation
     mesh_struct.updateMeshElevation(mesh_dof_handler,
                                     mesh_constraints,
@@ -200,7 +204,7 @@ void mm_test<dim>::run(){
     for (; cell!=endc; ++cell){
         if (cell->is_locally_owned()){
             int r = rand() % 100 + 1;
-            if (r < 20)
+            if (r < 30)
                 cell->set_refine_flag ();
             else if(r > 95)
                 cell->set_coarsen_flag();
@@ -224,20 +228,21 @@ void mm_test<dim>::run(){
     std::cout << "------------------------------------------------------------" << std::endl;
 
     // modify top function
-    rbf.centers.push_back(500);
-    rbf.centers.push_back(1500);
-    rbf.centers.push_back(2500);
-    rbf.centers.push_back(3500);
-    rbf.centers.push_back(4500);
-    rbf.weights.clear();
-    for (unsigned int i = 0; i < rbf.centers.size(); ++i)
-        rbf.weights.push_back(fRand(-100, 100));
+    rbf.centers.push_back(500); rbf.width.push_back(0.002);
+    rbf.centers.push_back(1500); rbf.width.push_back(0.002);
+    rbf.centers.push_back(2500); rbf.width.push_back(0.002);
+    rbf.centers.push_back(3500); rbf.width.push_back(0.002);
+    rbf.centers.push_back(4500); rbf.width.push_back(0.002);
+    rbf.assign_weights(mpi_communicator);
+
+
 
     for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
         it->second.B = 0;
         it->second.T = 300;
         it->second.T += rbf.eval(it->second.PNT[0]);
     }
+     std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
     mesh_struct.updateMeshElevation(mesh_dof_handler,
                                     mesh_constraints,
@@ -245,25 +250,29 @@ void mm_test<dim>::run(){
                                     distributed_mesh_vertices,
                                     mpi_communicator,
                                     pcout,"iter1");
-    return;
 
-    // ------------------Second refinment iteration ---------------------------------------------------
 
-    for (int i = 0; i < 4; ++i){
+    // ------------------ Second refinment iteration ---------------------------------------------------
+
+    for (int i = 0; i < 3; ++i){
         // refine the updated elevations
         cell = triangulation.begin_active(),
         endc = triangulation.end();
         for (; cell!=endc; ++cell){
             if (cell->is_locally_owned()){
                 int r = rand() % 100 + 1;
-                if (r < 10)
-                    cell->set_refine_flag ();
+                if (r < 20)
+                    cell->set_refine_flag();
                 else if(r > 95)
                     cell->set_coarsen_flag();
             }
         }
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
-        refine_transfer("refine" + i+2);
+        refine_transfer("refine" + std::to_string(i+1));
+
+        if (i == 2)
+            return;
+
 
         // Then we need to update the custon mesh structure after any change of the triangulation
         mesh_struct.updateMeshStruct(mesh_dof_handler,
@@ -274,24 +283,26 @@ void mm_test<dim>::run(){
                                      mesh_vertices,
                                      distributed_mesh_vertices,
                                      mpi_communicator,
-                                     pcout, "iter" + i+2);
+                                     pcout, "iter" + std::to_string(i+2));
 
-        rbf.weights.clear();
-        for (unsigned int i = 0; i < rbf.centers.size(); ++i)
-            rbf.weights.push_back(fRand(-100, 100));
+
+
+        rbf.assign_weights(mpi_communicator);
 
         for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
             it->second.B = 0;
             it->second.T = 300;
             it->second.T += rbf.eval(it->second.PNT[0]);
         }
+        std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
         mesh_struct.updateMeshElevation(mesh_dof_handler,
                                         mesh_constraints,
                                         mesh_vertices,
                                         distributed_mesh_vertices,
                                         mpi_communicator,
-                                        pcout, "iter" + i+2);
+                                        pcout, "iter" + std::to_string(i+2));
+
     }
 
 
@@ -304,7 +315,7 @@ int main (int argc, char **argv){
     deallog.depth_console (1);
 
     srand (time(NULL));
-
+    //srand(0);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
     mm_test<2> mm;

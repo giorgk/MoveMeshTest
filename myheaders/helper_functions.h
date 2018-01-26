@@ -3,12 +3,13 @@
 
 
 #include <deal.II/base/utilities.h>
+#include <deal.II/base/mpi.h>
 
 #include <vector>
 #include <math.h>
 #include <string>
 
-//using namespace dealii;
+using namespace dealii;
 
 
 /*!
@@ -116,8 +117,14 @@ public:
     RBF();
 
     std::vector<double> centers;
+    std::vector<double> width;
     std::vector<double> weights;
+
    double eval(double x);
+
+   void assign_centers(std::vector<double> cntrs, std::vector<double> wdth);
+
+   void assign_weights(MPI_Comm&  mpi_communicator);
 
 };
 
@@ -129,9 +136,16 @@ double RBF::eval(double x){
 
     double v = 0;
     for (unsigned int i = 0; i < centers.size(); ++i){
-        v += weights[i]*exp(-pow(0.001*fabs(x - centers[i]),2));
+        v += weights[i]*exp(-pow(width[i]*fabs(x - centers[i]),2));
     }
     return v;
+}
+
+void RBF::assign_centers(std::vector<double> cntrs, std::vector<double> wdth){
+    for (unsigned int i = 0; i < cntrs.size(); ++i){
+        centers.push_back(cntrs[i]);
+        width.push_back(wdth[i]);
+    }
 }
 
 double fRand(double fMin, double fMax)
@@ -139,6 +153,29 @@ double fRand(double fMin, double fMax)
     double f = (double)rand() / RAND_MAX;
     return fMin + f * (fMax - fMin);
 }
+
+void RBF::assign_weights(MPI_Comm&  mpi_communicator){
+    unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
+    MPI_Barrier(mpi_communicator);
+    if (my_rank == 0){
+        weights.clear();
+        for (unsigned int i = 0; i < centers.size(); ++i){
+            weights.push_back(fRand(-100, 100));
+        }
+    }else{
+        weights.clear();
+        weights.resize(centers.size());
+    }
+    MPI_Barrier(mpi_communicator);
+    MPI_Bcast(&weights[0], static_cast<int>(centers.size()),MPI_DOUBLE,0,mpi_communicator);
+    MPI_Barrier(mpi_communicator);
+    //std::cout << "I'm rank " << my_rank << " with " << weights.size() << " weights" << std::endl;
+    //for (int i = 0; i < weights.size(); ++i){
+    //    std::cout << "rank" << my_rank << ", w" << i << "=" << weights[i] << std::endl;
+    //}
+}
+
+
 
 
 #endif // HELPER_FUNCTIONS_H

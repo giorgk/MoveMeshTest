@@ -30,8 +30,9 @@ struct trianode {
 
 
 struct PntIndices{
-    int XYind;
     int Zind;
+    int XYind;
+    int isNew;
 };
 
 
@@ -216,6 +217,7 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
     PntIndices outcome;
     outcome.XYind = -99;
     outcome.Zind = -99;
+    outcome.isNew = -99;
 
     //if (zinfo.dof < 0)
     //    std::cerr << "You attepmt to add a point with negative dof" << std::endl << std::flush;
@@ -241,12 +243,14 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
         pair_point_id.push_back(std::make_pair(ine_Point2(x, y), _counter));
         CGALset.insert(pair_point_id.begin(), pair_point_id.end());
         outcome.XYind = _counter;
+        outcome.isNew = 1;
         _counter++;
     }else if (id >=0){
         typename std::map<int, PntsInfo<dim> >::iterator it = PointsMap.find(id);
         zinfo.used = true;
         it->second.add_Zcoord(zinfo, z_thres);
         outcome.XYind = it->first;
+        outcome.isNew = 0;
     }
 
     return outcome;
@@ -331,6 +335,9 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     std::map<int,int>::iterator itint;
     MPI_Barrier(mpi_communicator);
 
+    // Make a list of points in x-y that
+    std::vector<Point<dim-1> > pointsXY;
+
     pcout << "Update XYZ structure..." << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
     typename DoFHandler<dim>::active_cell_iterator
@@ -405,6 +412,10 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 //std::cout <<"Zdof: " << zinfo.dof << std::endl;
                 PntIndices id_in_map = add_new_point(ptemp, zinfo);
 
+                // This will create a list of XY points on every processor
+                if (id_in_map.isNew)
+                    pointsXY.push_back(ptemp);
+
                 if (id_in_map.XYind < 0)
                     std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
                 else{
@@ -430,6 +441,10 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
     if (n_proc > 1){
+        // First we will
+
+
+
         pcout << "exchange vertices between processors..." << std::endl << std::flush;
         // All vertices have been added to the PointsMap structure.
         // we loop through each vertex and store to a separate vector
