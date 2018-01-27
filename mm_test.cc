@@ -183,7 +183,7 @@ void mm_test<dim>::run(){
         // Here we update the top
         it->second.T += rbf.eval(it->second.PNT[0]);
     }
-     std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
+    //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
     // THe structure is used to update the elevation
     mesh_struct.updateMeshElevation(mesh_dof_handler,
                                     mesh_constraints,
@@ -242,7 +242,7 @@ void mm_test<dim>::run(){
         it->second.T = 300;
         it->second.T += rbf.eval(it->second.PNT[0]);
     }
-     std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
+    //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
     mesh_struct.updateMeshElevation(mesh_dof_handler,
                                     mesh_constraints,
@@ -255,6 +255,7 @@ void mm_test<dim>::run(){
     // ------------------ Second refinment iteration ---------------------------------------------------
 
     for (int i = 0; i < 3; ++i){
+        pcout << "====================== ITER: " << i << "=============================" << std::endl;
         // refine the updated elevations
         cell = triangulation.begin_active(),
         endc = triangulation.end();
@@ -269,9 +270,9 @@ void mm_test<dim>::run(){
         }
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
         refine_transfer("refine" + std::to_string(i+1));
-        return;
-        if (i == 2)
-            return;
+
+        //if (i == 1)
+        //    return;
 
 
         // Then we need to update the custon mesh structure after any change of the triangulation
@@ -294,7 +295,7 @@ void mm_test<dim>::run(){
             it->second.T = 300;
             it->second.T += rbf.eval(it->second.PNT[0]);
         }
-        std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
+        //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
         mesh_struct.updateMeshElevation(mesh_dof_handler,
                                         mesh_constraints,
@@ -302,6 +303,7 @@ void mm_test<dim>::run(){
                                         distributed_mesh_vertices,
                                         mpi_communicator,
                                         pcout, "iter" + std::to_string(i+2));
+        return;
 
     }
 
@@ -314,8 +316,10 @@ void mm_test<dim>::run(){
 int main (int argc, char **argv){
     deallog.depth_console (1);
 
-    srand (time(NULL));
-    //srand(0);
+    //srand (time(NULL));
+    int rr = time(NULL);
+    std::cout << rr << std::endl;
+    srand(rr);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
     mm_test<2> mm;

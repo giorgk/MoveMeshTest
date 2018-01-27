@@ -221,11 +221,18 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
     outcome.Zind = -99;
     outcome.isNew = -99;
 
+    //if (zinfo.dof == 189)
+    //    std::cout << "SO FAR SO GOOD" << std::endl;
+
     //if (zinfo.dof < 0)
     //    std::cerr << "You attepmt to add a point with negative dof" << std::endl << std::flush;
 
     // First search for the XY location in the structure
     int id = check_if_point_exists(p);
+
+    //if (zinfo.dof == 189)
+    //    std::cout << "id is " << id << std::endl;
+
     if ( id < 0 ){
         // this is a new point and we add it to the map
         PntsInfo<dim> tempPnt(p, zinfo);
@@ -244,11 +251,18 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
         }
         pair_point_id.push_back(std::make_pair(ine_Point2(x, y), _counter));
         CGALset.insert(pair_point_id.begin(), pair_point_id.end());
+
         outcome.XYind = _counter;
         outcome.isNew = 1;
         _counter++;
     }else if (id >=0){
         typename std::map<int, PntsInfo<dim> >::iterator it = PointsMap.find(id);
+        //if (zinfo.dof == 189){
+        //    if (it == PointsMap.end())
+        //        std::cout << "NO WAY" << std::endl;
+        //    else
+        //        std::cout << it->second.PNT[0] << std::endl;
+        //}
         zinfo.used = true;
         it->second.add_Zcoord(zinfo, z_thres);
         outcome.XYind = it->first;
@@ -311,8 +325,9 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     const MappingQ1<dim> mapping;
 
     pcout << "Distribute mesh dofs..." << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+
     mesh_dof_handler.distribute_dofs(mesh_fe);
-    pcout << "dofs 1" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+    //pcout << "dofs 1" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
     mesh_locally_owned = mesh_dof_handler.locally_owned_dofs();
     DoFTools::extract_locally_relevant_dofs (mesh_dof_handler, mesh_locally_relevant);
     mesh_vertices.reinit (mesh_locally_owned, mesh_locally_relevant, mpi_communicator);
@@ -340,13 +355,19 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     // Make a list of points in x-y that
     std::vector<std::vector<Point<dim-1> > > pointsXY(n_proc);
 
-    pcout << "Update XYZ structure..." << std::endl << std::flush;
+    pcout << "Update XYZ structure...for: " << prefix  << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
     typename DoFHandler<dim>::active_cell_iterator
         cell = mesh_dof_handler.begin_active(),
         endc = mesh_dof_handler.end();
+    //std::cout << "Rank: " << my_rank << " MADE IT to 00000 for " << prefix << std::endl;
+    MPI_Barrier(mpi_communicator);
+    int dbg_cnt =0;
     for (; cell != endc; ++cell){
         if (cell->is_locally_owned()){
+            //if (my_rank == 0){
+            //    std::cout << "++++cell " << dbg_cnt++ << "start+++++" << std::endl;
+            //}
             fe_mesh_points.reinit(cell);
             cell->get_dof_indices (cell_dof_indices);
             // First we will loop through the cell dofs gathering all info we need for the points
@@ -385,12 +406,26 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 temp.hang = mesh_constraints.is_constrained(current_dofs[dim-1]);
                 temp.spi = spi[dim-1];
                 curr_cell_info[idof] = temp;
+                //if (my_rank == 0){
+                //    std::cout << "(" << temp.pnt[0] << ", " << temp.pnt[1] << "), ";
+                //}
             }
+            //if (my_rank == 0){
+            //    std::cout << std::endl;
+            //    std::cout << "       Finish first part    " << std::endl;
+            //}
 
             typename std::map<int, trianode<dim> >::iterator it;
             for (it = curr_cell_info.begin(); it != curr_cell_info.end(); ++it){
+                //if (my_rank == 0 && dbg_cnt >= 62){
+                //    std::cout  << "a: " << it->first << ", " << it->second.dof << std::endl;
+                //}
                 // get the nodes connected with this one
                 std::vector<int> id_conn = get_connected_indices<dim>(it->first);
+
+                //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
+                //    std::cout<< "Made it here I " << std::endl;
+
                 // create a map of the points to add
                 std::map<int, std::pair<int,int> > connectedNodes;
                 for (unsigned int i = 0; i < id_conn.size(); ++i){
@@ -399,9 +434,17 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     // and in this list we should put the node level not the cell level
                     // MAYBE WE NEED TO ADD A DUMMY LEVEL AND UPDATE DURING A LATER LOOP
                     // IN ADDITION THE CONNECTED DOF IT MAY NOT BE PRESENT IN THE STRUCTURE YET
+
+                    //typename std::map<int, trianode<dim> >::iterator dbg_it = curr_cell_info.find(id_conn[i]);
+                    //if (dbg_it == curr_cell_info.end())
+                    //    std::cerr <<"@#%$^# " << id_conn[i] << " of " << i << "NOT FOUND IN curr_cell_info" << std::endl;
+                    //else
                     connectedNodes.insert(std::pair<int, std::pair<int,int> >(curr_cell_info[id_conn[i]].dof,
                                           std::pair<int,int> (-9, curr_cell_info[id_conn[i]].hang)));
                 }
+
+                //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
+                //    std::cout<< "Made it here II " << std::endl;
 
                 // Now create a zinfo variable
                 Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, connectedNodes);
@@ -410,9 +453,15 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 for (unsigned int d = 0; d < dim-1; ++d)
                     ptemp[d] = it->second.pnt[d];
 
+                //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
+                //    std::cout<< "Made it here III " << std::endl;
+
                 // Try to add it in the structure
                 //std::cout <<"Zdof: " << zinfo.dof << std::endl;
                 PntIndices id_in_map = add_new_point(ptemp, zinfo);
+
+                //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
+                //    std::cout<< "Made it here IV " << std::endl;
 
                 // This will create a list of XY points on every processor
                 //if (id_in_map.isNew)
@@ -426,13 +475,18 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 //    if (tf)
                 //        PointsMap[id_in_map.XYind].have_to_send = 1;
                 //}
+                //if (my_rank == 0 && dbg_cnt >= 62){
+                //    std::cout << "b: " << it->first << ", " << it->second.dof << std::endl;
+                //}
             }
+            //if (my_rank == 0)
+            //    std::cout << "+++++++++ Finish Second part +++++++++" << std::endl;
             //pcout << "----------------------------------------------------------------" << std::endl;
         }
     }
 
-
-
+    //std::cout << "Rank: " << my_rank << " MADE IT to AA for " << prefix << std::endl;
+    MPI_Barrier(mpi_communicator);
     make_dof_ij_map();
 
 
@@ -450,18 +504,24 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         // This list is used to determine the horizontal outline points that this processor occupies
         typename std::map<int ,  PntsInfo<dim> >::iterator it;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            pointsXY[my_rank].push_back(it->second.PNT);
+            if (!it->second.isEmpty)
+                pointsXY[my_rank].push_back(it->second.PNT);
         }
 
         // Next we will create polygons outlines from the points that each processor currently has
         // This function receives a list os single points and creates a polygon. Then the polygons
         // are transfered to all processors
         create_outline_polygon<dim>(pointsXY, mpi_communicator);
+
+        //std::cout << "Rank: " << my_rank << " MADE IT to BB for " << prefix << std::endl;
+        MPI_Barrier(mpi_communicator);
+
         // Identify which points each processor would need based on the outline polygons
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             // As we loop through the points we identify which processors this point
             // lay inside their polygons
-            it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXY, my_rank);
+            if (!it->second.isEmpty)
+                it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXY, my_rank);
         }
 
 
@@ -747,7 +807,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 if (it_df != dof_ij.end()){
                     it_con->second.first = PointsMap[it_df->second.first].Zlist[it_df->second.second].level;
                 }else{
-                    std::cerr << "I'm proc " << my_rank << " and I couldnt find the node with dof: " << it_con->first << " in my dof_ij map" << std::endl;
+                    //std::cerr << "I'm proc " << my_rank << " and I couldnt find the node with dof: " << it_con->first << " in my dof_ij map" << std::endl;
                 }
             }
 
@@ -780,7 +840,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                 if (it_c->second.first < i_lvl){
                                     it_dm = dof_ij.find(it_c->first);
                                     if (it_dm != dof_ij.end()){
-                                        std::cout << "dof: " << it_c->first << ", z: " << PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z << std::endl;
+                                        //std::cout << "dof: " << it_c->first << ", z: " << PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z << std::endl;
                                         newz += PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z;
                                         cntz += 1.0;
                                     }
@@ -940,10 +1000,8 @@ void Mesh_struct<dim>::make_dof_ij_map(){
 
     // Delete any empty XY points
     for (unsigned int i = 0; i < deletedPoints.size(); ++i){
-        PointsMap.erase(deletedPoints[i]);
+        PointsMap[deletedPoints[i]].isEmpty = true;
     }
-
-
 }
 
 template <int dim>

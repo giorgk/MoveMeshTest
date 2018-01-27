@@ -87,6 +87,8 @@ public:
      * The index 0 node has always itself its #Zinfo::id_bot, while the last index has itsef as its Zinfo::id_top.
     */
     void set_ids_above_below();
+
+    bool isEmpty;
 };
 
 template <int dim>
@@ -99,6 +101,7 @@ PntsInfo<dim>::PntsInfo(){
     Zlist.clear();
     have_to_send = 0;
     shared_proc.clear();
+    isEmpty = true;
 }
 
 template <int dim>
@@ -110,6 +113,7 @@ PntsInfo<dim>::PntsInfo(Point<dim-1> p, Zinfo zinfo){
     B = -9999.0;
     have_to_send = 0;
     shared_proc.clear();
+    isEmpty = false;
 }
 
 template <int dim>
@@ -126,6 +130,7 @@ void PntsInfo<dim>::add_Zcoord(Zinfo zinfo, double thres){
         Zlist.push_back(zinfo);
         std::sort(Zlist.begin(), Zlist.end(), sort_Zlist<Zinfo>);
     }
+    isEmpty = false;
 }
 
 template<int dim>
