@@ -151,7 +151,7 @@ template <int dim>
 void mm_test<dim>::run(){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
-    // after we generated the mesh we update the our custom Mesh structure
+    // after we generated the mesh we update the custom Mesh structure
     mesh_struct.updateMeshStruct(mesh_dof_handler,
                                  mesh_fe,
                                  mesh_constraints,
@@ -225,7 +225,7 @@ void mm_test<dim>::run(){
                                  mpi_communicator,
                                  pcout, "iter1");
 
-    std::cout << "------------------------------------------------------------" << std::endl;
+    //std::cout << "------------------------------------------------------------" << std::endl;
 
     // modify top function
     rbf.centers.push_back(500); rbf.width.push_back(0.002);
@@ -254,7 +254,7 @@ void mm_test<dim>::run(){
 
     // ------------------ Second refinment iteration ---------------------------------------------------
 
-    for (int i = 0; i < 3; ++i){
+    for (int i = 0; i < 10; ++i){
         pcout << "====================== ITER: " << i << "=============================" << std::endl;
         // refine the updated elevations
         cell = triangulation.begin_active(),
@@ -271,8 +271,8 @@ void mm_test<dim>::run(){
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
         refine_transfer("refine" + std::to_string(i+1));
 
-        //if (i == 1)
-        //    return;
+        if (i == 7)
+            return;
 
 
         // Then we need to update the custon mesh structure after any change of the triangulation
@@ -303,7 +303,6 @@ void mm_test<dim>::run(){
                                         distributed_mesh_vertices,
                                         mpi_communicator,
                                         pcout, "iter" + std::to_string(i+2));
-        return;
 
     }
 
