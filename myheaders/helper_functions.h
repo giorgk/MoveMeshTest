@@ -9,6 +9,7 @@
 #include <math.h>
 #include <string>
 #include "mpi_help.h"
+#include "cgal_functions.h"
 
 using namespace dealii;
 
@@ -131,10 +132,22 @@ void create_outline_polygon(std::vector<std::vector<Point<dim-1>>> &pointdata, M
         std::cout << "I'm rank " << my_rank << " and my limits are: (" << pointdata[my_rank][0][0] << ", " << pointdata[my_rank][1][0] << ")" << std::endl;
 
     }else if (dim == 3){
-        std::cerr << "Not implemented yet" << std::endl;
+        std::vector<ine_Point2> pnts, c_poly;
+        for (unsigned int i = 0; i < pointdata[my_rank].size(); ++i){
+            pnts.push_back(ine_Point2(pointdata[my_rank][i][0], pointdata[my_rank][i][1]));
+        }
+        c_poly = convex_poly(pnts);
+        pointdata[my_rank].clear();
+        for (unsigned int i = 0; i < c_poly.size(); ++i){
+            Point<dim-1> temp;
+            temp[0] = c_poly[i].x();
+            temp[1] = c_poly[i].y();
+            pointdata[my_rank].push_back(temp);
+        }
     }else{
         std::cerr << "Unsuported dimension. Has to be 2D or 3D" << std::endl;
     }
+    //std::cout << "Rank: " << my_rank << " outline has " << pointdata[my_rank].size() << " points" << std::endl;
 
     // Send my polygon outline to all processors
     std::vector<std::vector<double> > serialized_points(n_proc);
@@ -163,7 +176,7 @@ void create_outline_polygon(std::vector<std::vector<Point<dim-1>>> &pointdata, M
     for (unsigned int i = 0; i < n_proc; ++i){
         if (i == my_rank)
             continue;
-        for (unsigned int j = 0; j < Npoints_per_polygon_proc[my_rank];){
+        for (int j = 0; j < Npoints_per_polygon_proc[i];){
             Point<dim-1> tempP;
             tempP[0] = serialized_points[i][j]; j++;
             if (dim == 3){
@@ -172,10 +185,19 @@ void create_outline_polygon(std::vector<std::vector<Point<dim-1>>> &pointdata, M
             pointdata[i].push_back(tempP);
         }
     }
+
+    //for (int i = 0; i < pointdata.size(); ++i){
+    //    std::cout << "Rank: " << my_rank << ": proc " << i << " has :";
+    //    for (int j = 0; j < pointdata[i].size(); ++j){
+    //         std::cout << pointdata[i][j] << " | ";
+    //    }
+    //    std::cout << std::endl;
+    //}
+
 }
 
 template <int dim>
-std::vector<int> send_point(Point<dim-1> p, std::vector<std::vector<Point<dim-1>>> pointdata, int my_rank){
+std::vector<int> send_point(Point<dim-1> p, std::vector<std::vector<Point<dim-1>>> pointdata, unsigned int my_rank){
     std::vector<int> shared_proc;
     if (dim == 2){
         for (unsigned int i = 0; i < pointdata.size(); ++i){
@@ -188,42 +210,62 @@ std::vector<int> send_point(Point<dim-1> p, std::vector<std::vector<Point<dim-1>
             }
         }
     } else if (dim == 3) {
-        std::cerr << "3D not implemented yet" << std::endl;
+        std::cerr << "You shouldn't really be using this version of the function for 3D" << std::endl;
     }
     return shared_proc;
 }
 
+template <int dim>
+std::vector<int> send_point(Point<dim-1> p, std::vector<std::vector<ine_Point2>> pointdata, unsigned int my_rank){
+    std::vector<int> shared_proc;
+    if (dim == 2){
+        std::cerr << "You shouldn't really be using this version of the function for 2D" << std::endl;
+    } else if (dim == 3) {
+        for (unsigned int i = 0; i < pointdata.size(); ++i){
+            if (i == my_rank)
+                continue;
+            if (is_point_Inside(ine_Point2(p[0], p[1]), pointdata[i]) >= 0)
+                shared_proc.push_back(i);
+        }
+    }
+    return shared_proc;
+}
 
+template <int dim>
 class RBF{
 public:
     RBF();
 
-    std::vector<double> centers;
+    std::vector<Point<dim> > centers;
     std::vector<double> width;
     std::vector<double> weights;
 
-   double eval(double x);
+   double eval(Point<dim> x);
 
-   void assign_centers(std::vector<double> cntrs, std::vector<double> wdth);
+   void assign_centers(std::vector<Point<dim> > cntrs, std::vector<double> wdth);
 
    void assign_weights(MPI_Comm  mpi_communicator);
 
 };
 
-RBF::RBF(){}
+template<int dim>
+RBF<dim>::RBF(){}
 
-double RBF::eval(double x){
+template <int dim>
+double RBF<dim>::eval(Point<dim> x){
     if (centers.size() != weights.size())
         std::cerr << "The weights have to be equal with the centers" << std::endl;
 
     double v = 0;
     for (unsigned int i = 0; i < centers.size(); ++i){
-        v += weights[i]*exp(-pow(width[i]*fabs(x - centers[i]),2));
+        double n = x.distance(centers[i]);
+        v += weights[i]*exp(-pow(width[i]*n,2));
     }
     return v;
 }
 
-void RBF::assign_centers(std::vector<double> cntrs, std::vector<double> wdth){
+template <int dim>
+void RBF<dim>::assign_centers(std::vector<Point<dim> > cntrs, std::vector<double> wdth){
     for (unsigned int i = 0; i < cntrs.size(); ++i){
         centers.push_back(cntrs[i]);
         width.push_back(wdth[i]);
@@ -236,7 +278,8 @@ double fRand(double fMin, double fMax)
     return fMin + f * (fMax - fMin);
 }
 
-void RBF::assign_weights(MPI_Comm  mpi_communicator){
+template <int dim>
+void RBF<dim>::assign_weights(MPI_Comm  mpi_communicator){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
     MPI_Barrier(mpi_communicator);
     if (my_rank == 0){

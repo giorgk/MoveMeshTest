@@ -354,6 +354,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     // Make a list of points in x-y that
     std::vector<std::vector<Point<dim-1> > > pointsXY(n_proc);
+    std::vector<std::vector<ine_Point2 > > pointsXYcgal(n_proc);
 
     pcout << "Update XYZ structure...for: " << prefix  << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
@@ -362,7 +363,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         endc = mesh_dof_handler.end();
     //std::cout << "Rank: " << my_rank << " MADE IT to 00000 for " << prefix << std::endl;
     MPI_Barrier(mpi_communicator);
-    int dbg_cnt =0;
+    //int dbg_cnt =0;
     for (; cell != endc; ++cell){
         if (cell->is_locally_owned()){
             //if (my_rank == 0){
@@ -499,19 +500,33 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     dbg_meshStructInfo3D("before3D_Struct_" + prefix + "_", my_rank);
 
 
+
     if (n_proc > 1){
         // We will make a list of points XY point that this processor holds.
-        // This list is used to determine the horizontal outline points that this processor occupies
+        // This list is used to determine the horizontal outline points that this processor has
         typename std::map<int ,  PntsInfo<dim> >::iterator it;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             if (!it->second.isEmpty)
                 pointsXY[my_rank].push_back(it->second.PNT);
         }
 
-        // Next we will create polygons outlines from the points that each processor currently has
+        // Next we will create polygons outlines from the points that each processor currently has.
         // This function receives a list os single points and creates a polygon. Then the polygons
         // are transfered to all processors
         create_outline_polygon<dim>(pointsXY, mpi_communicator);
+
+
+
+        if (dim == 3){// in 3D we convert the vector pointsXY to cgal version
+            for (unsigned int i = 0; i < pointsXY.size(); ++i){
+                for (unsigned int j = 0; j < pointsXY[i].size(); ++j){
+                    pointsXYcgal[i].push_back(ine_Point2(pointsXY[i][j][0], pointsXY[i][j][1]));
+                }
+            }
+        }
+
+
+
 
         //std::cout << "Rank: " << my_rank << " MADE IT to BB for " << prefix << std::endl;
         MPI_Barrier(mpi_communicator);
@@ -520,11 +535,14 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             // As we loop through the points we identify which processors this point
             // lay inside their polygons
-            if (!it->second.isEmpty)
-                it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXY, my_rank);
+            if (!it->second.isEmpty){
+                if (dim == 2)
+                    it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXY, my_rank);
+                else if (dim == 3){
+                    it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXYcgal, my_rank);
+                }
+            }
         }
-
-
 
 
 
@@ -543,12 +561,15 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             }
         }
 
+
+
         //std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << std::endl;
         MPI_Barrier(mpi_communicator);
 
         // -----------------Send those points to every processor------------
 
         SendReceive_PntsInfo(sharedPoints, my_rank, n_proc, z_thres, mpi_communicator);
+
 
         // Loop through the received points and get the ones my_rank should get
         for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
@@ -749,8 +770,8 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                 if (dim ==2 ) z2 = 0; else
                     z2 = PointsMap[it_dof->second.first].PNT[1];
                 y2 = PointsMap[it_dof->second.first].Zlist[it_dof->second.second].z;
-                log_file1 << x1/dbg_scale_x << ", " << y1/dbg_scale_z << ", " << z1 << ", "
-                          << x2/dbg_scale_x << ", " << y2/dbg_scale_z << ", " << z2 <<  std::endl;
+                log_file1 << x1/dbg_scale_x << ", " << y1/dbg_scale_z << ", " << z1/dbg_scale_x << ", "
+                          << x2/dbg_scale_x << ", " << y2/dbg_scale_z << ", " << z2/dbg_scale_x <<  std::endl;
             }
         }
      }
@@ -821,7 +842,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     // connection with a node above or below. If the hanging node has both connections
     // with the nodes above and below we can calculate safely its elevation on the second loop.
 
-    for (unsigned int i_lvl = 1; i_lvl <= n_levels; ++i_lvl){
+    for (int i_lvl = 1; i_lvl <= n_levels; ++i_lvl){
         // loop 1: hanging nodes only
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();

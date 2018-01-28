@@ -195,7 +195,7 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
             }
             int Nshared_proc = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
             std::vector<int> shared_proc;
-            for (unsigned int ii = 0; ii < Nshared_proc; ++ii){
+            for (int ii = 0; ii < Nshared_proc; ++ii){
                 shared_proc.push_back(get_v<int>(int_data, i_proc, i_cnt)); i_cnt++;
             }
 

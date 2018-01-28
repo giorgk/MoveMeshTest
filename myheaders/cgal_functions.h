@@ -24,6 +24,9 @@
 #include <CGAL/Range_segment_tree_traits.h>
 #include <CGAL/Range_tree_k.h>
 
+// includes for convex hull
+#include <CGAL/convex_hull_2.h>
+
 /*! \file cgal_functions.h
     \brief CGAL types and functions.
 
@@ -264,6 +267,43 @@ std::vector<int> circle_search_in_2DSet(PointSet2& PSet, ine_Point3 p_in, double
     return id;
 }
 
+/*!
+ * \brief convex_poly creates a convex polygons from a set of points
+ * \param pnts is the set of points
+ * \return a vector with the convex hull polygon points
+ */
+std::vector<ine_Point2> convex_poly(std::vector<ine_Point2> pnts){
+    std::vector<ine_Point2> res;
+    CGAL::convex_hull_2(pnts.begin(), pnts.end(), std::back_inserter(res));
+    return res;
+}
+
+
+/*!
+ * \brief is_point_Inside tests if a point is inside a polygon
+ * \param p is the point in question
+ * \param poly is a vector of points of type #ine_Point2
+ * \return 1 if the point is inside the polygon, 0 if it lays on the boundary and -1 if its outside of the polygon
+ */
+int is_point_Inside(ine_Point2 p, std::vector<ine_Point2> poly){
+    int res = -1;
+    CGAL::Bounded_side bside = CGAL::bounded_side_2(poly.begin(), poly.end(), p);
+    switch (bside) {
+            case CGAL::ON_BOUNDED_SIDE:
+                res = 1;
+                //std::cout << "the point is on bounded side" << std::endl;
+                break;
+            case CGAL::ON_BOUNDARY:
+                res = 0;
+                //std::cout << "the point is on the boundary" << std::endl;
+                break;
+            case CGAL::ON_UNBOUNDED_SIDE:
+                res = -1;
+                //std::cout << "the point is on the unbounded side" << std::endl;
+            break;
+        }
+    return res;
+}
 
 // The original file has two more functions to add
 

@@ -149,7 +149,7 @@ void mm_test<dim>::refine_transfer(std::string prefix){
 
 template <int dim>
 void mm_test<dim>::run(){
-    unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
+    //unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
     // after we generated the mesh we update the custom Mesh structure
     mesh_struct.updateMeshStruct(mesh_dof_handler,
@@ -165,15 +165,26 @@ void mm_test<dim>::run(){
 
 
 
+
     // Set Top and Bottom elevation
-    RBF rbf;
-    std::vector<double> cntrs, wdth;
-    cntrs.push_back(1000); wdth.push_back(0.001);
-    cntrs.push_back(2000); wdth.push_back(0.001);
-    cntrs.push_back(3000); wdth.push_back(0.001);
-    cntrs.push_back(4000);wdth.push_back(0.001);
+    RBF<dim-1> rbf;
+    std::vector<Point<dim-1> > cntrs;
+    std::vector<double> wdth;
+
+    for (unsigned int i = 1; i < 5; ++i){
+        for (unsigned int j = 1; j < 5; ++j){
+            Point<dim-1> temp;
+            temp[0] = static_cast<double>(i)*1000;
+            if (dim == 3)
+                temp[1] = static_cast<double>(j)*1000;
+            cntrs.push_back(temp);
+            wdth.push_back(0.001);
+        }
+    }
     rbf.assign_centers(cntrs,wdth);
     rbf.assign_weights(mpi_communicator);
+
+
 
     // Set initial top bottom elebation elevation
     typename std::map<int , PntsInfo<dim> >::iterator it;
@@ -181,8 +192,11 @@ void mm_test<dim>::run(){
         it->second.T = 300;// this is supposed to set the initial elevation
         it->second.B = 0;
         // Here we update the top
-        it->second.T += rbf.eval(it->second.PNT[0]);
+        it->second.T += rbf.eval(it->second.PNT);
+        //std::cout << it->second.T << std::endl;
     }
+
+
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
     // THe structure is used to update the elevation
     mesh_struct.updateMeshElevation(mesh_dof_handler,
@@ -193,7 +207,7 @@ void mm_test<dim>::run(){
                                     pcout,
                                     "iter0");
 
-
+    return;
 
 
 
@@ -228,19 +242,19 @@ void mm_test<dim>::run(){
     //std::cout << "------------------------------------------------------------" << std::endl;
 
     // modify top function
-    rbf.centers.push_back(500); rbf.width.push_back(0.002);
-    rbf.centers.push_back(1500); rbf.width.push_back(0.002);
-    rbf.centers.push_back(2500); rbf.width.push_back(0.002);
-    rbf.centers.push_back(3500); rbf.width.push_back(0.002);
-    rbf.centers.push_back(4500); rbf.width.push_back(0.002);
-    rbf.assign_weights(mpi_communicator);
+    //rbf.centers.push_back(500); rbf.width.push_back(0.002);
+    //rbf.centers.push_back(1500); rbf.width.push_back(0.002);
+    //rbf.centers.push_back(2500); rbf.width.push_back(0.002);
+    //rbf.centers.push_back(3500); rbf.width.push_back(0.002);
+    //rbf.centers.push_back(4500); rbf.width.push_back(0.002);
+    //rbf.assign_weights(mpi_communicator);
 
 
 
     for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
         it->second.B = 0;
         it->second.T = 300;
-        it->second.T += rbf.eval(it->second.PNT[0]);
+        it->second.T += rbf.eval(it->second.PNT);
     }
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
@@ -293,7 +307,7 @@ void mm_test<dim>::run(){
         for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
             it->second.B = 0;
             it->second.T = 300;
-            it->second.T += rbf.eval(it->second.PNT[0]);
+            it->second.T += rbf.eval(it->second.PNT);
         }
         //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
@@ -321,7 +335,7 @@ int main (int argc, char **argv){
     srand(rr);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
-    mm_test<2> mm;
+    mm_test<3> mm;
     mm.run();
 
 
