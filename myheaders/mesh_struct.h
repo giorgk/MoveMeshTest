@@ -211,7 +211,7 @@ Mesh_struct<dim>::Mesh_struct(double xy_thr, double z_thr){
     z_thres = z_thr;
     _counter = 0;
     dbg_scale_x = 100;
-    dbg_scale_z = 100;
+    dbg_scale_z = 20;
 }
 
 template <int dim>
@@ -366,6 +366,14 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     //int dbg_cnt =0;
     for (; cell != endc; ++cell){
         if (cell->is_locally_owned()){
+
+            if (dim == 2){
+
+            }else if (dim == 3){
+
+            }
+
+
             //if (my_rank == 0){
             //    std::cout << "++++cell " << dbg_cnt++ << "start+++++" << std::endl;
             //}
@@ -715,8 +723,8 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                       << std::setw(15) << itz->level << ", "
                       << std::setw(15) << itz->id_above  << ", "
                       << std::setw(15) << itz->id_below << ", "
-                      << std::setw(15) << itz->id_top  << ", "
-                      << std::setw(15) << itz->id_bot << ", "
+                      << std::setw(15) << itz->dof_top  << ", "
+                      << std::setw(15) << itz->dof_bot << ", "
                       << std::setw(15) << itz->rel_pos  << ", "
                       << std::setw(15) << itz->hanging << ", "
                       << std::setw(15) << it->second.T << ", "
@@ -843,7 +851,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     // with the nodes above and below we can calculate safely its elevation on the second loop.
 
     for (int i_lvl = 1; i_lvl <= n_levels; ++i_lvl){
-        // loop 1: hanging nodes only
+        // loop 1: hanging nodes that depend on previous level nodes
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
             for (; itz != it->second.Zlist.end(); ++itz){
@@ -866,7 +874,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                         cntz += 1.0;
                                     }
                                     else{
-                                        std::cerr << "For the node: " << itz->dof << " I coudlnt find the "
+                                        std::cerr << "Rank " << my_rank << ": For the node: " << itz->dof << " I coudlnt find the "
                                                   << it_c->first << " which is supposed to be connected" << std::endl;
                                     }
                                 }
@@ -884,7 +892,45 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 }
             }
         }
-        // loop 2: change all the remaining elevations on this level
+
+        // loop 2: hanging nodes that depend on hanging nodes of the same level
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+            for (; itz != it->second.Zlist.end(); ++itz){
+                if (itz->level == i_lvl){
+                    if (itz->hanging){
+                        if (!itz->connected_above || !itz->connected_below){
+                            double newz = 0; double cntz = 0;
+                            std::map<int,std::pair<int,int> >::iterator it_c;// iterator for connected points (dof,<level,hanging>)
+                            std::map<int,std::pair<int,int> >::iterator it_dm; // iterator for dof_ij
+                            for (it_c = itz->dof_conn.begin(); it_c != itz->dof_conn.end(); ++it_c){
+                                if (it_c->second.first == i_lvl){
+                                    it_dm = dof_ij.find(it_c->first);
+                                    if (it_dm != dof_ij.end()){
+                                        newz += PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z;
+                                        cntz += 1.0;
+                                    }
+                                    else{
+                                        std::cerr << "Rank " << my_rank << ": For the node: " << itz->dof << " I coudlnt find the "
+                                                  << it_c->first << " which is supposed to be connected" << std::endl;
+                                    }
+                                }
+                            }
+                            if (cntz < 1){
+                                std::cerr << " no conections found for the node with dof: " << itz->dof << std::endl;
+                            }
+                            else{
+                                itz->z = newz / cntz;
+                                itz->isZset = true;
+                                //std::cout << "Znew: " << itz->z << std::endl;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // loop 3: change all the remaining elevations on this level
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
             for (; itz != it->second.Zlist.end(); ++itz){
@@ -893,7 +939,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                         //std::cout << "-------x: " << it->second.PNT[0] << ", dof: " << itz->dof << " ---------" << std::endl;
                         //std::cout << "Zold: " << itz->z << ", r: " << itz->rel_pos << std::endl;
                         if (it->second.Zlist[itz->id_bot].isZset == false)
-                            std::cout << itz->dof << " will use " << itz->dof_bot << " value which has not been yet set" << std::endl;
+                            std::cout << "RANK " << my_rank << " has dof " << itz->dof << " will use as bot " << itz->dof_bot << " value which has not been yet set" << std::endl;
 
                         double zb = it->second.Zlist[itz->id_bot].z;
                         double zt;
@@ -901,7 +947,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                         //    zt = it->second.T;
                         //else
                         if (it->second.Zlist[itz->id_top].isZset == false)
-                            std::cout << itz->dof << " will use " << itz->dof_top << " value which has not been yet set" << std::endl;
+                            std::cout << "RANK " << my_rank << " has dof " << itz->dof << " will use as top " << itz->dof_top << " value which has not been yet set" << std::endl;
 
                         zt = it->second.Zlist[itz->id_top].z;
                         //std:: cout << "zt: " << zt << ", zb: " << zb << " dof(t,b): (" << itz->dof_top << "," << itz->dof_bot
@@ -966,19 +1012,26 @@ void Mesh_struct<dim>::move_vertices(DoFHandler<dim>& mesh_dof_handler,
     typename DoFHandler<dim>::active_cell_iterator
     cell = mesh_dof_handler.begin_active(),
     endc = mesh_dof_handler.end();
+    double x,y,z;
     for (; cell != endc; ++cell){
         if (cell->is_locally_owned()){//cell->is_artificial() == false
             for (unsigned int vertex_no = 0; vertex_no < GeometryInfo<dim>::vertices_per_cell; ++vertex_no){
                 Point<dim> &v=cell->vertex(vertex_no);
                 for (unsigned int dir=0; dir < dim; ++dir){
                     v(dir) = mesh_vertices(cell->vertex_dof_index(vertex_no, dir));
-                    if (dir == dim-1)
-                        mesh_file << v(dir)/dbg_scale_z << ", ";
-                    else
-                        mesh_file << v(dir)/dbg_scale_x << ", ";
+                    if (dir == 0)
+                        x = v(dir)/dbg_scale_x;
+                    if (dir == 1 && dim == 2){
+                        y = v(dir)/dbg_scale_z;
+                        z = 0;
+                    }
+                    if (dir == 1 && dim == 3){
+                        z = v(dir)/dbg_scale_x;
+                    }
+                    if (dir == 2 && dim == 3)
+                        y = v(dir)/dbg_scale_z;
                 }
-                if (dim == 2)
-                    mesh_file << 0 << ", ";
+                mesh_file << x << ", " << y << ", " << z << ", ";
             }
             mesh_file << std::endl;
         }

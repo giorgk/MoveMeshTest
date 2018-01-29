@@ -207,7 +207,7 @@ void mm_test<dim>::run(){
                                     pcout,
                                     "iter0");
 
-    return;
+
 
 
 
@@ -228,6 +228,7 @@ void mm_test<dim>::run(){
     refine_transfer("refine0");
 
 
+
     // Then we need to update the custon mesh structure after any change of the triangulation
     mesh_struct.updateMeshStruct(mesh_dof_handler,
                                  mesh_fe,
@@ -239,15 +240,22 @@ void mm_test<dim>::run(){
                                  mpi_communicator,
                                  pcout, "iter1");
 
+
     //std::cout << "------------------------------------------------------------" << std::endl;
 
     // modify top function
-    //rbf.centers.push_back(500); rbf.width.push_back(0.002);
-    //rbf.centers.push_back(1500); rbf.width.push_back(0.002);
-    //rbf.centers.push_back(2500); rbf.width.push_back(0.002);
-    //rbf.centers.push_back(3500); rbf.width.push_back(0.002);
-    //rbf.centers.push_back(4500); rbf.width.push_back(0.002);
-    //rbf.assign_weights(mpi_communicator);
+    for (unsigned int i = 0; i < 5; ++i){
+        for (unsigned int j = 0; j < 5; ++j){
+            Point<dim-1> temp;
+            temp[0] = static_cast<double>(i)*1000 + 500;
+            if (dim == 3)
+                temp[1] = static_cast<double>(j)*1000 + 500;
+            cntrs.push_back(temp);
+            wdth.push_back(0.002);
+        }
+    }
+    rbf.assign_centers(cntrs,wdth);
+    rbf.assign_weights(mpi_communicator);
 
 
 
@@ -264,6 +272,7 @@ void mm_test<dim>::run(){
                                     distributed_mesh_vertices,
                                     mpi_communicator,
                                     pcout,"iter1");
+
 
 
     // ------------------ Second refinment iteration ---------------------------------------------------
@@ -285,6 +294,7 @@ void mm_test<dim>::run(){
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
         refine_transfer("refine" + std::to_string(i+1));
 
+        return;
         if (i == 7)
             return;
 
@@ -330,9 +340,9 @@ int main (int argc, char **argv){
     deallog.depth_console (1);
 
     //srand (time(NULL));
-    int rr = time(NULL);
-    std::cout << rr << std::endl;
-    srand(rr);
+    //int rr = time(NULL);
+    //std::cout << rr << std::endl;
+    srand(1517231878);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
     mm_test<3> mm;
