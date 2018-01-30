@@ -285,7 +285,7 @@ void RBF<dim>::assign_weights(MPI_Comm  mpi_communicator){
     if (my_rank == 0){
         weights.clear();
         for (unsigned int i = 0; i < centers.size(); ++i){
-            weights.push_back(fRand(-100, 100));
+            weights.push_back(fRand(-20, 20));
         }
     }else{
         weights.clear();

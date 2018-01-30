@@ -29,7 +29,7 @@ public:
      * \param level is the level of the node
      * \param constr is true if its a hanging node
      */
-    Zinfo(double z, int dof, int level, bool constr, std::map<int,std::pair<int,int> > dof_conn);
+    Zinfo(double z, int dof, int level, bool constr, std::vector<int> cnstr_nodes, int istop, int isbot, std::map<int,std::pair<int,int> > dof_conn);
 
     //! This is a map that holds the dofs of the triangulation points as key,
     //! and the level,hangin flag as pair of integers of the points that this is connected with.
@@ -71,6 +71,8 @@ public:
     //! change all values to dummy ones (negative) except the elevation and the level
     void reset();
 
+    void add_constraint_nodes(std::vector<int> cnst);
+
     //! This is the elevation
     double z;
 
@@ -85,6 +87,9 @@ public:
 
     //! This is set to 1 if the node is hanging
     int hanging;
+
+    //! This is a vector that holds the constraint nodes
+    std::vector<int> cnstr_nds;
 
     //! This is the dof of the node above this node
     int id_above;
@@ -117,9 +122,12 @@ public:
     bool connected_below;
 
     bool isZset;
+
+    int isTop;
+    int isBot;
 };
 
-Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::map<int,std::pair<int,int> > conn){
+Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::vector<int> cnstr_nodes, int istop, int isbot,  std::map<int,std::pair<int,int> > conn){
     // To construct a new point we need to know the elevation,
     // the dof, the level and whether is a hanging node.
     // Although the ids should not be negative we allow to create Zinfo points with negative ids
@@ -132,8 +140,15 @@ Zinfo::Zinfo(double z_in, int dof_in, int level_in, bool constr, std::map<int,st
     z = z_in;
     dof = dof_in;
     level = level_in;
-    if (constr) hanging = 1;
-    else hanging = 0;
+    if (constr){
+        hanging = 1;
+        add_constraint_nodes(cnstr_nodes);
+    }
+    else
+        hanging = 0;
+
+    isTop = istop;
+    isBot = isbot;
 
     id_above = -9;
     id_below = -9;
@@ -165,6 +180,7 @@ void Zinfo::update_main_info(Zinfo newZ){
     hanging = newZ.hanging;
     used = newZ.used;
     Add_connections(newZ.dof_conn);
+    add_constraint_nodes(newZ.cnstr_nds);
 }
 
 void Zinfo::Add_connections(std::map<int,std::pair<int,int> > conn){
@@ -216,7 +232,23 @@ void Zinfo::reset(){
     connected_above = false;
     connected_below = false;
     dof_conn.clear();
+    cnstr_nds.clear();
 }
 
+void Zinfo::add_constraint_nodes(std::vector<int> cnstr_nodes){
+    for (unsigned int i = 0; i < cnstr_nodes.size(); ++i){
+        if (cnstr_nodes[i] == dof)
+            continue;
+        bool addthis = true;
+        for (unsigned int j = 0; j < cnstr_nds.size(); ++j){
+            if (cnstr_nodes[i] == cnstr_nds[j]){
+                addthis = false;
+                break;
+            }
+        }
+        if (addthis)
+            cnstr_nds.push_back(cnstr_nodes[i]);
+    }
+}
 
 #endif // ZINFO_H

@@ -137,19 +137,25 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
         for (unsigned int ii = 0; ii < Pnts[my_rank][i].shared_proc.size(); ++ii){
             int_data[my_rank].push_back(Pnts[my_rank][i].shared_proc[ii]);
         }
-        // The send the number of Z coordinates Nz in the list
+        // Then send the number of Z coordinates Nz in the list
         int_data[my_rank].push_back(Pnts[my_rank][i].Zlist.size()); //number of Z coordinates Nz in the list
-        for (unsigned int j = 0; j < Pnts[my_rank][i].Zlist.size(); ++j){ // then send the follwong info Nz times
+        for (unsigned int j = 0; j < Pnts[my_rank][i].Zlist.size(); ++j){ // then send the following info Nz times
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].hanging); // hanging
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].dof);     // dof
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].level);   // level
+            int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].isTop);
+            int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].isBot);
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].dof_conn.size());   // Send the number of connections Nconn for this point
             for (it_cn = Pnts[my_rank][i].Zlist[j].dof_conn.begin(); it_cn != Pnts[my_rank][i].Zlist[j].dof_conn.end(); ++it_cn){// for each Nconn send the following
                 int_data[my_rank].push_back(it_cn->first); // the dof of the connected node
                 int_data[my_rank].push_back(it_cn->second.first); // level of the connected node
                 int_data[my_rank].push_back(it_cn->second.second); // hanging of the connected node
             }
-
+            int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].cnstr_nds.size());   // Send the number of constraints Nconn for this point
+            for (int jj = 0; jj < Pnts[my_rank][i].Zlist[j].cnstr_nds.size(); ++jj){// send the dofs that constraint this node
+                int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].cnstr_nds[jj]);
+            }
+            // And last add the z value in the double vector
             //if (my_rank == 0) std::cout << "z: " << Pnts[my_rank][i].Zlist[j].z << std::endl;
             dbl_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].z);
         }
@@ -211,6 +217,8 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
                 //if (my_rank == dbg_proc) std::cout << "I'm rank " << my_rank << ", dof: " << dof << std::endl;
                 int lvl = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
                 //if (my_rank == dbg_proc) std::cout << "I'm rank " << my_rank << ", lvl: " << lvl << std::endl;
+                int istop = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                int isbot = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
 
                 int Nconn = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
                 //if (my_rank == dbg_proc) std::cout << "I'm rank " << my_rank << ", Nconn: " << Nconn << std::endl;
@@ -224,7 +232,14 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
                     //if (my_rank == dbg_proc) std::cout << "I'm rank " << my_rank << ", c_hng: " << c_hng << std::endl;
                     conn.insert(std::pair<int, std::pair<int, int>>(c_dof, std::pair<int,int>(c_lvl, c_hng)));
                 }
-                Zinfo zinfo(z, dof, lvl, hng, conn);
+
+                int Ncnsrt = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                std::vector<int> cnstr_dofs;
+                for (int k = 0; k < Ncnsrt; ++k){
+                    cnstr_dofs.push_back(get_v<int>(int_data, i_proc, i_cnt));i_cnt++;
+                }
+
+                Zinfo zinfo(z, dof, lvl, hng, cnstr_dofs, istop, isbot, conn);
                 Point<dim-1> p;
                 p[0] = x;
                 if (dim == 3)

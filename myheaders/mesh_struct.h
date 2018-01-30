@@ -28,6 +28,9 @@ struct trianode {
     int hang;
     int spi; // support_point_index
     std::map<int,int> c_pnt;// dofs of points connected to that node
+    int isTop;
+    int isBot;
+    std::vector<types::global_dof_index> cnstr_nd;
 };
 
 
@@ -366,13 +369,19 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     //int dbg_cnt =0;
     for (; cell != endc; ++cell){
         if (cell->is_locally_owned()){
+            bool top_cell = false;
+            bool bot_cell = false;
 
-            if (dim == 2){
 
-            }else if (dim == 3){
 
+            if (cell->neighbor_index(GeometryInfo<dim>::faces_per_cell-2) < 0){
+                //std::cout << "Is bottom" << std::endl;
+                bot_cell = true;
             }
-
+            if (cell->neighbor_index(GeometryInfo<dim>::faces_per_cell-1) < 0){
+                //std::cout << "Is top" << std::endl;
+                top_cell = true;
+            }
 
             //if (my_rank == 0){
             //    std::cout << "++++cell " << dbg_cnt++ << "start+++++" << std::endl;
@@ -413,7 +422,25 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 temp.dof = current_dofs[dim-1];
                 temp.level = cell->level();
                 temp.hang = mesh_constraints.is_constrained(current_dofs[dim-1]);
+                temp.cnstr_nd.push_back(current_dofs[dim-1]);
+                mesh_constraints.resolve_indices(temp.cnstr_nd);
+                //if (current_dofs[dim-1] == 519)
+                //    std::cout <<"@@@@@@@@@@@@@@@@@@@@@@@@ " << temp.cnstr_nd.size() << "##################" << std::endl;
                 temp.spi = spi[dim-1];
+                temp.isBot = 0;
+                temp.isTop = 0;
+                if (bot_cell){
+                    if (idof < GeometryInfo<dim>::vertices_per_cell/2){
+                        temp.isBot = 1;
+                        //std::cout << "bottom point" << std::endl;
+                    }
+                }
+                if (top_cell){
+                    if (idof >= GeometryInfo<dim>::vertices_per_cell/2){
+                        temp.isTop = 1;
+                        //std::cout << "top point" << std::endl;
+                    }
+                }
                 curr_cell_info[idof] = temp;
                 //if (my_rank == 0){
                 //    std::cout << "(" << temp.pnt[0] << ", " << temp.pnt[1] << "), ";
@@ -456,7 +483,17 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 //    std::cout<< "Made it here II " << std::endl;
 
                 // Now create a zinfo variable
-                Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, connectedNodes);
+                std::vector<int> temp_cnstr;
+                for (unsigned int ii = 0; ii < it->second.cnstr_nd.size(); ++ii){
+                    temp_cnstr.push_back(it->second.cnstr_nd[ii]);
+                }
+                //if (it->second.dof == 519){
+                //    std::cout << "R " << my_rank << " " << temp_cnstr.size() << "$&@^#&$^@&#^$&^@&#$^@&#" << std::endl;
+                //}
+                Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, temp_cnstr, it->second.isTop, it->second.isBot, connectedNodes);
+                //if (it->second.dof == 519){
+                //    std::cout << "RΡΡΡΡΡΡΡΡΡ " << my_rank << " " << zinfo.cnstr_nds.size() << "$&@^#&$^@&#^$&^@&#$^@&#" << std::endl;
+                //}
                 // and a point
                 Point<dim-1> ptemp;
                 for (unsigned int d = 0; d < dim-1; ++d)
@@ -720,7 +757,10 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                       << std::setw(15) << z << ", "
                       << std::setw(15) << itz->dof << ", "
                       << std::setw(15) << itz->dof_conn.size() << ", "
+                      << std::setw(15) << itz->cnstr_nds.size() << ", "
                       << std::setw(15) << itz->level << ", "
+                      << std::setw(15) << itz->isTop << ", "
+                      << std::setw(15) << itz->isBot << ", "
                       << std::setw(15) << itz->id_above  << ", "
                       << std::setw(15) << itz->id_below << ", "
                       << std::setw(15) << itz->dof_top  << ", "
@@ -796,7 +836,83 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                            std::string prefix){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
+    typename std::map<int , PntsInfo<dim> >::iterator it;
+    std::map<int,std::pair<int,int> >::iterator it_dm; // iterator for dof_ij
 
+    int dbg_iter = 0;
+    while (true){
+        int n_not_set = 0;
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+            for (; itz != it->second.Zlist.end(); ++itz){
+                //std::cout << "Rank [" << my_rank << "]x: " << it->second.PNT << " z: (" << itz->dof << "): " << itz->z << std::endl;
+                if (itz->isZset)
+                    continue;
+
+                if (itz->isTop){// The nodes on the top lsurface gets their values directly
+                    itz->z = it->second.T;
+                    itz->isZset = true;
+                }
+                else if (itz->isBot){ // Same for the nodes on the bottom
+                    itz->z = it->second.B;
+                    itz->isZset = true;
+                }
+                else if (itz->hanging){
+                    // if the node is constraint we get a list of ids that this node depends on
+                    // and average their values only if all of them have been set at this iteration
+                    // The boolean is_complete gets false if any of the nodes has not been set this iteration
+                    bool is_complete = true;
+                    double newz = 0;
+                    double cntz = 0;
+
+                    for (unsigned int ii = 0; ii < itz->cnstr_nds.size(); ++ii){
+                        //find the ij indices in the PointMap structure
+                        it_dm = dof_ij.find(itz->cnstr_nds[ii]);
+                        if (it_dm != dof_ij.end()){
+                            if (PointsMap[it_dm->second.first].Zlist[it_dm->second.second].isZset){
+                                newz += PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z;
+                                cntz = cntz + 1.0;
+                            }
+                            else{
+                                is_complete = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (is_complete){
+                        if (cntz >0){
+                            itz->z = newz / cntz;
+                            itz->isZset = true;
+                        }
+                        else
+                            std::cout << "Rank: " << my_rank << " has constrained dof " << itz->dof << " with 0 constraint nodes" << std::endl;
+                    }
+
+                }
+                else{
+                    if (it->second.Zlist[itz->id_bot].isZset == true && it->second.Zlist[itz->id_top].isZset == true){
+                        if (it->second.Zlist[itz->id_bot].isZset == true && it->second.Zlist[itz->id_top].isZset == true){
+                            itz->z = it->second.Zlist[itz->id_top].z*itz->rel_pos + it->second.Zlist[itz->id_bot].z*(1.0 - itz->rel_pos);
+                            itz->isZset = true;
+                        }
+                    }
+                }
+                if (distributed_mesh_vertices.in_local_range(static_cast<unsigned int >(itz->dof))){
+                    if (itz->isZset)
+                        distributed_mesh_vertices[static_cast<unsigned int >(itz->dof)] = itz->z;
+                    else{
+                        //std::cout << "R: " << my_rank << " dof " << itz->dof << std::endl;
+                        n_not_set++;
+                    }
+                }
+            }// loop Z points
+        }// loop x-y points
+        std::cout << n_not_set << std::endl;
+        if (n_not_set == 0)
+            break;
+    }
+    std::cout << "Rank " << my_rank << " has converged" << std::endl;
+/*
     int n_levels = 0;
     typename std::map<int , PntsInfo<dim> >::iterator it;
     std::map<int,std::pair<int,int> >::iterator it_con, it_df;
@@ -819,15 +935,16 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 // for the coming loop
                 if (itz->level > n_levels)
                     n_levels = itz->level;
-            }
 
-            if (itz->hanging == 0 && !itz->connected_above){
-                itz->z = it->second.T;
-                itz->isZset = true;
-            }
-             if (itz->hanging == 0 && !itz->connected_below){
-                itz->z = it->second.B;
-                itz->isZset = true;
+                if (itz->isTop == 1){
+                    itz->z = it->second.T;
+                    itz->isZset = true;
+                }
+
+                if (itz->isBot == 1){
+                    itz->z = it->second.B;
+                    itz->isZset = true;
+                }
             }
 
             // In addition we will set the levels of the nodes connected to each point
@@ -839,11 +956,91 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                     //std::cerr << "I'm proc " << my_rank << " and I couldnt find the node with dof: " << it_con->first << " in my dof_ij map" << std::endl;
                 }
             }
-
-
+            if (itz->isZset){
+                if (distributed_mesh_vertices.in_local_range(static_cast<unsigned int >(itz->dof))){
+                    distributed_mesh_vertices[static_cast<unsigned int >(itz->dof)] = itz->z;
+                }
+            }
         }
     }
 
+
+    std::map<int,std::pair<int,int> >::iterator it_c;// iterator for connected points (dof,<level,hanging>)
+    std::map<int,std::pair<int,int> >::iterator it_dm; // iterator for dof_ij
+    while (true){
+        int n_not_set = 0;
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+            for (; itz != it->second.Zlist.end(); ++itz){
+                if (itz->isZset)
+                    continue;
+                if (itz->connected_above && itz->connected_below){
+                    if (it->second.Zlist[itz->id_bot].isZset == true && it->second.Zlist[itz->id_top].isZset == true){
+                        itz->z = it->second.Zlist[itz->id_top].z*itz->rel_pos + it->second.Zlist[itz->id_bot].z*(1.0 - itz->rel_pos);
+                        itz->isZset = true;
+                    }
+                }
+                else if ((itz->connected_below && !itz->connected_above) || (!itz->connected_below && itz->connected_above)){
+                    std::cout << "Z: " << itz->dof << std::endl;
+                    bool is_complete = true;
+                    double newz = 0;
+                    double cntz = 0;
+                    bool use_samelevel = true;
+                    // find out the levels of the connected nodes
+                    for (it_c = itz->dof_conn.begin(); it_c != itz->dof_conn.end(); ++it_c){
+                        if (it_c->first == itz->id_below || it_c->first == itz->id_above)
+                            continue;
+                        if (it_c->second.first < itz->level){
+                            use_samelevel = false;
+                            break;
+                        }
+                    }
+                    std::vector< types::global_dof_index > indices;
+                    indices.push_back(itz->dof);
+                    mesh_constraints.resolve_indices(indices);
+                    // loop though the connections
+                    for (it_c = itz->dof_conn.begin(); it_c != itz->dof_conn.end(); ++it_c){
+                        std::cout << "c: " << it_c->first << std::endl;
+                        if (it_c->first != itz->id_below && it_c->first != itz->id_above){// we skip the connection with the node below or above
+                            if (!use_samelevel)
+                                if (it_c->second.first >= itz->level)
+                                    continue;
+                            it_dm = dof_ij.find(it_c->first);
+                            if (it_dm != dof_ij.end()){
+                                if (PointsMap[it_dm->second.first].Zlist[it_dm->second.second].isZset){
+                                    newz += PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z;
+                                    cntz = cntz + 1.0;
+                                }
+                                else{
+                                    is_complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (is_complete){
+                        itz->z = newz / cntz;
+                        itz->isZset = true;
+                    }
+                }
+
+                if (distributed_mesh_vertices.in_local_range(static_cast<unsigned int >(itz->dof))){
+                    if (itz->dof == 2561)
+                        std::cout << my_rank << std::endl;
+                    if (itz->isZset)
+                        distributed_mesh_vertices[static_cast<unsigned int >(itz->dof)] = itz->z;
+                    else
+                        n_not_set++;
+                }
+            }
+        }
+        std::cout << n_not_set << std::endl;
+        if (n_not_set == 0)
+            break;
+    }
+*/
+    MPI_Barrier(mpi_communicator);
+/*
     // However for all other levels we have to do the z calculations in a specific order.
     // For each level we loop through the nodes twice.
     // The first time we will update the elevations of the hanging nodes that have no
@@ -855,7 +1052,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
             for (; itz != it->second.Zlist.end(); ++itz){
-                if (itz->level == i_lvl){
+                if (itz->level == i_lvl && itz->isZset == false){
                     if (itz->hanging){
                         if (!itz->connected_above || !itz->connected_below){
                             //std::cout << "-------x: " << it->second.PNT[0] << ", dof: " << itz->dof << " ---------" << std::endl;
@@ -866,7 +1063,9 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                             std::map<int,std::pair<int,int> >::iterator it_c;// iterator for connected points (dof,<level,hanging>)
                             std::map<int,std::pair<int,int> >::iterator it_dm; // iterator for dof_ij
                             for (it_c = itz->dof_conn.begin(); it_c != itz->dof_conn.end(); ++it_c){
-                                if (it_c->second.first < i_lvl){
+                                if (it_c->second.first < i_lvl && (it_c->first != itz->id_above && it_c->first != itz->id_below)){
+                                    if (itz->dof == 2345)
+                                        std::cout << "AA 2345 " << it_c->first << std::endl;
                                     it_dm = dof_ij.find(it_c->first);
                                     if (it_dm != dof_ij.end()){
                                         //std::cout << "dof: " << it_c->first << ", z: " << PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z << std::endl;
@@ -897,14 +1096,16 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
             for (; itz != it->second.Zlist.end(); ++itz){
-                if (itz->level == i_lvl){
+                if (itz->level == i_lvl  && itz->isZset == false){
                     if (itz->hanging){
                         if (!itz->connected_above || !itz->connected_below){
                             double newz = 0; double cntz = 0;
                             std::map<int,std::pair<int,int> >::iterator it_c;// iterator for connected points (dof,<level,hanging>)
                             std::map<int,std::pair<int,int> >::iterator it_dm; // iterator for dof_ij
                             for (it_c = itz->dof_conn.begin(); it_c != itz->dof_conn.end(); ++it_c){
-                                if (it_c->second.first == i_lvl){
+                                if (it_c->second.first == i_lvl && (it_c->first != itz->id_above && it_c->first != itz->id_below)){
+                                    if (itz->dof == 2345)
+                                        std::cout << "BB 2345 " << it_c->first << std::endl;
                                     it_dm = dof_ij.find(it_c->first);
                                     if (it_dm != dof_ij.end()){
                                         newz += PointsMap[it_dm->second.first].Zlist[it_dm->second.second].z;
@@ -967,7 +1168,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
 
     }// loop through levels
 
-    dbg_meshStructInfo3D("After3D_Elev_" + prefix + "_", my_rank);
+
 
 
 
@@ -983,6 +1184,10 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             }
         }
     }
+    */
+
+    dbg_meshStructInfo3D("After3D_Elev_" + prefix + "_", my_rank);
+
     // The compress sends the data to the processors that owns the data
     distributed_mesh_vertices.compress(VectorOperation::insert);
 

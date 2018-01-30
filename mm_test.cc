@@ -163,7 +163,7 @@ void mm_test<dim>::run(){
                                  pcout,
                                  "iter0");
 
-
+    //return;
 
 
     // Set Top and Bottom elevation
@@ -186,6 +186,7 @@ void mm_test<dim>::run(){
 
 
 
+
     // Set initial top bottom elebation elevation
     typename std::map<int , PntsInfo<dim> >::iterator it;
     for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
@@ -197,8 +198,9 @@ void mm_test<dim>::run(){
     }
 
 
+
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
-    // THe structure is used to update the elevation
+    // The structure is used to update the elevation
     mesh_struct.updateMeshElevation(mesh_dof_handler,
                                     mesh_constraints,
                                     mesh_vertices,
@@ -208,7 +210,7 @@ void mm_test<dim>::run(){
                                     "iter0");
 
 
-
+    //return;
 
 
     // refine the updated elevations
@@ -218,7 +220,7 @@ void mm_test<dim>::run(){
     for (; cell!=endc; ++cell){
         if (cell->is_locally_owned()){
             int r = rand() % 100 + 1;
-            if (r < 30)
+            if (r < 20)
                 cell->set_refine_flag ();
             else if(r > 95)
                 cell->set_coarsen_flag();
@@ -227,7 +229,7 @@ void mm_test<dim>::run(){
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer("refine0");
 
-
+    //return;
 
     // Then we need to update the custon mesh structure after any change of the triangulation
     mesh_struct.updateMeshStruct(mesh_dof_handler,
@@ -263,6 +265,7 @@ void mm_test<dim>::run(){
         it->second.B = 0;
         it->second.T = 300;
         it->second.T += rbf.eval(it->second.PNT);
+        //std::cout << rbf.eval(it->second.PNT) << std::endl;
     }
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
@@ -272,7 +275,7 @@ void mm_test<dim>::run(){
                                     distributed_mesh_vertices,
                                     mpi_communicator,
                                     pcout,"iter1");
-
+    //return;
 
 
     // ------------------ Second refinment iteration ---------------------------------------------------
@@ -285,7 +288,7 @@ void mm_test<dim>::run(){
         for (; cell!=endc; ++cell){
             if (cell->is_locally_owned()){
                 int r = rand() % 100 + 1;
-                if (r < 20)
+                if (r < 10)
                     cell->set_refine_flag();
                 else if(r > 95)
                     cell->set_coarsen_flag();
@@ -294,8 +297,8 @@ void mm_test<dim>::run(){
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
         refine_transfer("refine" + std::to_string(i+1));
 
-        return;
-        if (i == 7)
+
+        if (i == 8)
             return;
 
 
@@ -328,6 +331,7 @@ void mm_test<dim>::run(){
                                         mpi_communicator,
                                         pcout, "iter" + std::to_string(i+2));
 
+
     }
 
 
@@ -345,7 +349,7 @@ int main (int argc, char **argv){
     srand(1517231878);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
-    mm_test<3> mm;
+    mm_test<2> mm;
     mm.run();
 
 
