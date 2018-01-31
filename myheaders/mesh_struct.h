@@ -24,7 +24,6 @@ template <int dim>
 struct trianode {
     Point <dim> pnt;
     int dof;
-    int level;
     int hang;
     int spi; // support_point_index
     std::map<int,int> c_pnt;// dofs of points connected to that node
@@ -187,16 +186,13 @@ public:
                                     MyFunction<dim, dim-1> bot_function,
                                     std::vector<double>& vert_discr);
 
-    //! Calculates the positions of the vertices that belong to a given level #level
-    void update_z(int level, MPI_Comm &mpi_communicator);
-
     //! This method sets the scales #dbg_scale_x and #dbg_scale_z for debug plotting using softwares like houdini
     void dbg_set_scales(double xscale, double zscale);
 
 
     void move_vertices(DoFHandler<dim>& mesh_dof_handler,
                        TrilinosWrappers::MPI::Vector& mesh_vertices,
-                       int my_rank,
+                       unsigned int my_rank,
                        std::string prefix);
 
 private:
@@ -239,7 +235,6 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
     if ( id < 0 ){
         // this is a new point and we add it to the map
         PntsInfo<dim> tempPnt(p, zinfo);
-        zinfo.used = true;
         PointsMap[_counter] = tempPnt;
 
         //... to the Cgal structure
@@ -266,7 +261,6 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
         //    else
         //        std::cout << it->second.PNT[0] << std::endl;
         //}
-        zinfo.used = true;
         it->second.add_Zcoord(zinfo, z_thres);
         outcome.XYind = it->first;
         outcome.isNew = 0;
@@ -322,7 +316,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     // make sure all processors start together
     MPI_Barrier(mpi_communicator);
-    reset(); // delete all the information except the coordinates
+    reset(); // delete all
     MPI_Barrier(mpi_communicator);
 
     const MappingQ1<dim> mapping;
@@ -372,8 +366,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             bool top_cell = false;
             bool bot_cell = false;
 
-
-
             if (cell->neighbor_index(GeometryInfo<dim>::faces_per_cell-2) < 0){
                 //std::cout << "Is bottom" << std::endl;
                 bot_cell = true;
@@ -420,7 +412,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 trianode<dim> temp;
                 temp.pnt = current_node;
                 temp.dof = current_dofs[dim-1];
-                temp.level = cell->level();
                 temp.hang = mesh_constraints.is_constrained(current_dofs[dim-1]);
                 temp.cnstr_nd.push_back(current_dofs[dim-1]);
                 mesh_constraints.resolve_indices(temp.cnstr_nd);
@@ -463,7 +454,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 //    std::cout<< "Made it here I " << std::endl;
 
                 // create a map of the points to add
-                std::map<int, std::pair<int,int> > connectedNodes;
+                std::map<int, int> connectedNodes;
                 for (unsigned int i = 0; i < id_conn.size(); ++i){
                     // The curr_cell_info[id_conn[i]].level corresponds to the level of the
                     // cell we currently are. However each cell may consist of nodes of different levels
@@ -471,29 +462,18 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     // MAYBE WE NEED TO ADD A DUMMY LEVEL AND UPDATE DURING A LATER LOOP
                     // IN ADDITION THE CONNECTED DOF IT MAY NOT BE PRESENT IN THE STRUCTURE YET
 
-                    //typename std::map<int, trianode<dim> >::iterator dbg_it = curr_cell_info.find(id_conn[i]);
-                    //if (dbg_it == curr_cell_info.end())
-                    //    std::cerr <<"@#%$^# " << id_conn[i] << " of " << i << "NOT FOUND IN curr_cell_info" << std::endl;
-                    //else
-                    connectedNodes.insert(std::pair<int, std::pair<int,int> >(curr_cell_info[id_conn[i]].dof,
-                                          std::pair<int,int> (-9, curr_cell_info[id_conn[i]].hang)));
+                    connectedNodes.insert(std::pair<int, int >(curr_cell_info[id_conn[i]].dof, curr_cell_info[id_conn[i]].hang));
                 }
 
-                //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
-                //    std::cout<< "Made it here II " << std::endl;
-
-                // Now create a zinfo variable
+                // create a vector of ints to hold the nodes that this node depends on if its constrained
                 std::vector<int> temp_cnstr;
                 for (unsigned int ii = 0; ii < it->second.cnstr_nd.size(); ++ii){
                     temp_cnstr.push_back(it->second.cnstr_nd[ii]);
                 }
-                //if (it->second.dof == 519){
-                //    std::cout << "R " << my_rank << " " << temp_cnstr.size() << "$&@^#&$^@&#^$&^@&#$^@&#" << std::endl;
-                //}
-                Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, it->second.level,it->second.hang, temp_cnstr, it->second.isTop, it->second.isBot, connectedNodes);
-                //if (it->second.dof == 519){
-                //    std::cout << "RΡΡΡΡΡΡΡΡΡ " << my_rank << " " << zinfo.cnstr_nds.size() << "$&@^#&$^@&#^$&^@&#$^@&#" << std::endl;
-                //}
+
+                // Now create a zinfo variable
+                Zinfo zinfo(it->second.pnt[dim-1], it->second.dof,it->second.hang, temp_cnstr, it->second.isTop, it->second.isBot, connectedNodes);
+
                 // and a point
                 Point<dim-1> ptemp;
                 for (unsigned int d = 0; d < dim-1; ++d)
@@ -504,7 +484,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
                 // Try to add it in the structure
                 //std::cout <<"Zdof: " << zinfo.dof << std::endl;
-                PntIndices id_in_map = add_new_point(ptemp, zinfo);
+                PntIndices id_in_map = add_new_point(ptemp, zinfo); // MAYBE WE DONT NEED TO RETURN ANYTHING
 
                 //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
                 //    std::cout<< "Made it here IV " << std::endl;
@@ -559,7 +539,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         // This function receives a list os single points and creates a polygon. Then the polygons
         // are transfered to all processors
         create_outline_polygon<dim>(pointsXY, mpi_communicator);
-
 
 
         if (dim == 3){// in 3D we convert the vector pointsXY to cgal version
@@ -630,7 +609,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                         std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
                         for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
                             if ( itz->dof >=0 ){
-                                itz->used = true;
                                 it->second.add_Zcoord(*itz, z_thres);
                             }
                         }
@@ -641,7 +619,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                         it = PointsMap.find(indices.XYind);
                         for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
                             if ( itz->dof >=0 ){
-                                itz->used = true;
                                 it->second.add_Zcoord(*itz, z_thres);
                             }
                         }
@@ -683,11 +660,10 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 template <int dim>
 void Mesh_struct<dim>::reset(){
-    typename std::map<int , PntsInfo<dim> >::iterator it;
-    for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-        it->second.reset();
-    }
+    _counter = 0;
+    PointsMap.clear();
     dof_ij.clear();
+    CGALset.clear();
 }
 
 template <int dim>
@@ -758,11 +734,10 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                       << std::setw(15) << itz->dof << ", "
                       << std::setw(15) << itz->dof_conn.size() << ", "
                       << std::setw(15) << itz->cnstr_nds.size() << ", "
-                      << std::setw(15) << itz->level << ", "
                       << std::setw(15) << itz->isTop << ", "
                       << std::setw(15) << itz->isBot << ", "
-                      << std::setw(15) << itz->id_above  << ", "
-                      << std::setw(15) << itz->id_below << ", "
+                      << std::setw(15) << itz->dof_above  << ", "
+                      << std::setw(15) << itz->dof_below << ", "
                       << std::setw(15) << itz->dof_top  << ", "
                       << std::setw(15) << itz->dof_bot << ", "
                       << std::setw(15) << itz->rel_pos  << ", "
@@ -773,7 +748,7 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                       << std::endl;
 
 
-             std::map<int,std::pair<int,int> >::iterator itt;
+             std::map<int, int >::iterator itt;
              for (itt = itz->dof_conn.begin(); itt != itz->dof_conn.end(); ++itt){
                  int a,b;
                  if (itz->dof < itt->first){
@@ -1204,7 +1179,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
 template <int dim>
 void Mesh_struct<dim>::move_vertices(DoFHandler<dim>& mesh_dof_handler,
                                      TrilinosWrappers::MPI::Vector& mesh_vertices,
-                                     int my_rank,
+                                     unsigned int my_rank,
                                      std::string prefix){
     // for debuging just print the cell mesh
     const std::string mesh_file_name = ("mesh_after_" + prefix + "_" +
@@ -1262,24 +1237,10 @@ template  <int dim>
 void Mesh_struct<dim>::make_dof_ij_map(){
     dof_ij.clear();
     typename std::map<int , PntsInfo<dim> >::iterator it;
-    std::vector<int> deletedPoints;
     for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-        for (int k = it->second.Zlist.size() - 1; k >= 0; --k){
-            if (it->second.Zlist[k].used == false){
-                it->second.Zlist.erase(it->second.Zlist.begin() + k);
-            }
-        }
-        if (it->second.Zlist.size() == 0){
-            deletedPoints.push_back(it->first);
-        }
         for (unsigned int k = 0; k < it->second.Zlist.size(); ++k){
             dof_ij[it->second.Zlist[k].dof] = std::pair<int,int> (it->first,k);
         }
-    }
-
-    // Delete any empty XY points
-    for (unsigned int i = 0; i < deletedPoints.size(); ++i){
-        PointsMap[deletedPoints[i]].isEmpty = true;
     }
 }
 
@@ -1298,16 +1259,5 @@ void Mesh_struct<dim>::compute_initial_elevations(MyFunction<dim, dim-1> top_fun
     }
 }
 
-template <int dim>
-void Mesh_struct<dim>::update_z(int level, MPI_Comm &mpi_communicator){
-
-    typename std::map<int , PntsInfo<dim> >::iterator it;
-    for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-        for (unsigned int j = 0; j < it->second.Zlist.size(); ++j){
-
-        }
-
-    }
-}
 
 #endif // MESH_STRUCT_H

@@ -165,7 +165,6 @@ void mm_test<dim>::run(){
 
     //return;
 
-
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
     std::vector<Point<dim-1> > cntrs;
@@ -241,7 +240,7 @@ void mm_test<dim>::run(){
                                  distributed_mesh_vertices,
                                  mpi_communicator,
                                  pcout, "iter1");
-
+    //return;
 
     //std::cout << "------------------------------------------------------------" << std::endl;
 

@@ -57,6 +57,7 @@ public:
     */
     int have_to_send;
 
+    //! This is a list of processors id that share this node
     std::vector <int> shared_proc;
 
     /*!
@@ -190,29 +191,29 @@ void PntsInfo<dim>::set_ids_above_below(){
     for (unsigned int i = 0; i < Zlist.size(); ++i){
         if (i == 0){//================================================
             // If this is the first node from the bottom
-            Zlist[i].id_above = Zlist[i+1].dof;
-            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].id_above);
+            Zlist[i].dof_above = Zlist[i+1].dof;
+            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].dof_above);
             Zlist[i].dof_bot = Zlist[i].dof;
             Zlist[i].id_bot = i;
 
         }else if(i==Zlist.size()-1){//======================================
             //this is the top node on this list
-            Zlist[i].id_below = Zlist[i-1].dof;
-            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].id_below);
+            Zlist[i].dof_below = Zlist[i-1].dof;
+            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].dof_below);
             Zlist[i].dof_top = Zlist[i].dof;
             Zlist[i].id_top = i;
 
         }else{
-            Zlist[i].id_above = Zlist[i+1].dof;
-            Zlist[i].id_below = Zlist[i-1].dof;
-            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].id_above);
-            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].id_below);
+            Zlist[i].dof_above = Zlist[i+1].dof;
+            Zlist[i].dof_below = Zlist[i-1].dof;
+            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].dof_above);
+            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].dof_below);
         }
     }
-    // THIS PART HAS NOT BEEN TESTED YET=======================================
+    //=======================================
     int cur_dof_bot =Zlist[0].dof;
     int cur_id_bot = 0;
-    for (unsigned int i = 1; i < Zlist.size(); ++i){
+    for (int i = 1; i < Zlist.size(); ++i){
         if (Zlist[i].connected_below){
             Zlist[i].dof_bot = cur_dof_bot;
             Zlist[i].id_bot = cur_id_bot;
@@ -244,7 +245,6 @@ void PntsInfo<dim>::set_ids_above_below(){
     for (unsigned int i = 0; i < Zlist.size(); ++i){
         Zlist[i].rel_pos = (Zlist[i].z - Zlist[Zlist[i].id_bot].z)/(Zlist[Zlist[i].id_top].z - Zlist[Zlist[i].id_bot].z);
     }
-
 }
 
 

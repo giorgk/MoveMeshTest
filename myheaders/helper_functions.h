@@ -160,7 +160,7 @@ void create_outline_polygon(std::vector<std::vector<Point<dim-1>>> &pointdata, M
     //std::cout << "I'm " << my_rank << " and have " << serialized_points[my_rank].size() << " serialized points" << std::endl;
 
     std::vector <int> Npoints_per_polygon_proc(n_proc);
-    Send_receive_size(serialized_points[my_rank].size(), n_proc, Npoints_per_polygon_proc, mpi_communicator);
+    Send_receive_size(static_cast<unsigned int>(serialized_points[my_rank].size()), n_proc, Npoints_per_polygon_proc, mpi_communicator);
     //for (int i = 0; i < n_proc; ++i)
     //    std::cout << "I'm " << my_rank << " and proc " << i << " has " << Npoints_per_polygon_proc[i] << " points" << std::endl;
 
