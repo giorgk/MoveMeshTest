@@ -163,7 +163,7 @@ void mm_test<dim>::run(){
                                  pcout,
                                  "iter0");
 
-    //return;
+    return;
 
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
@@ -296,8 +296,8 @@ void mm_test<dim>::run(){
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
         refine_transfer("refine" + std::to_string(i+1));
 
-
-        if (i == 8)
+        //return;
+        if (i == 6)
             return;
 
 
@@ -343,12 +343,13 @@ int main (int argc, char **argv){
     deallog.depth_console (1);
 
     //srand (time(NULL));
-    //int rr = time(NULL);
-    //std::cout << rr << std::endl;
-    srand(1517231878);
+    int rr = time(NULL);
+    std::cout << rr << std::endl;
+    //srand(1517231878);
+    srand(rr);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
-    mm_test<2> mm;
+    mm_test<3> mm;
     mm.run();
 
 

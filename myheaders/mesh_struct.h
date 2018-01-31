@@ -18,6 +18,7 @@
 #include "my_functions.h"
 #include "mpi_help.h"
 #include "helper_functions.h"
+#include "polygon_outline.h"
 
 //! custom struct to hold data
 template <int dim>
@@ -201,6 +202,9 @@ private:
     double dbg_scale_x;
     double dbg_scale_z;
 
+    //std::vector<Polygon_Outline<dim-1>> Outlines;
+    Polygon_Outline<dim-1> Outlines;
+
 
 };
 
@@ -355,6 +359,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     pcout << "Update XYZ structure...for: " << prefix  << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
+    //Outlines.resize(n_proc,Polygon_Outline<dim-1>());
     typename DoFHandler<dim>::active_cell_iterator
         cell = mesh_dof_handler.begin_active(),
         endc = mesh_dof_handler.end();
@@ -505,6 +510,21 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 //    std::cout << "b: " << it->first << ", " << it->second.dof << std::endl;
                 //}
             }
+
+            // In 3D create add the projection of this cell to the outline of this processor
+            if (dim == 3){
+                std::vector<Point<dim-1>> cell_pnt;
+                it = curr_cell_info.begin();
+                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
+                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
+                Point<dim-1> ll = Point<dim-1>(it->second.pnt[0], it->second.pnt[1]);it++;
+                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));
+                cell_pnt.push_back(ll);
+                Outlines.addPolygon(cell_pnt);
+                if (my_rank == 1){
+                    Outlines.PrintPolygons(my_rank);
+                }
+            }
             //if (my_rank == 0)
             //    std::cout << "+++++++++ Finish Second part +++++++++" << std::endl;
             //pcout << "----------------------------------------------------------------" << std::endl;
@@ -515,6 +535,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
     make_dof_ij_map();
 
+    //Outlines.PrintPolygons(my_rank);
 
 
     MPI_Barrier(mpi_communicator);
@@ -524,7 +545,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     //dbg_meshStructInfo2D("before2D", my_rank);
     dbg_meshStructInfo3D("before3D_Struct_" + prefix + "_", my_rank);
 
-
+    return;
 
     if (n_proc > 1){
         // We will make a list of points XY point that this processor holds.
@@ -593,6 +614,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         // -----------------Send those points to every processor------------
 
         SendReceive_PntsInfo(sharedPoints, my_rank, n_proc, z_thres, mpi_communicator);
+        std::cout << "Finish Send and Receive------------" << std::endl;
 
 
         // Loop through the received points and get the ones my_rank should get
@@ -664,6 +686,7 @@ void Mesh_struct<dim>::reset(){
     PointsMap.clear();
     dof_ij.clear();
     CGALset.clear();
+    //Outlines.clear();
 }
 
 template <int dim>
