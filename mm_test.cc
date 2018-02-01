@@ -163,7 +163,7 @@ void mm_test<dim>::run(){
                                  pcout,
                                  "iter0");
 
-    return;
+
 
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
@@ -228,7 +228,7 @@ void mm_test<dim>::run(){
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer("refine0");
 
-    //return;
+    return;
 
     // Then we need to update the custon mesh structure after any change of the triangulation
     mesh_struct.updateMeshStruct(mesh_dof_handler,

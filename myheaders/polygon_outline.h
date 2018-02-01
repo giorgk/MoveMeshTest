@@ -132,6 +132,7 @@ bool Polygon_Outline<dim>::isPointInside(dealii::Point<dim> p){
         if (in)
             break;
     }
+    //std::cout << in << std::endl;
     return in;
 }
 

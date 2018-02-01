@@ -545,24 +545,22 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     //dbg_meshStructInfo2D("before2D", my_rank);
     dbg_meshStructInfo3D("before3D_Struct_" + prefix + "_", my_rank);
 
-    return;
+    //return;
 
     if (n_proc > 1){
         // We will make a list of points XY point that this processor holds.
         // This list is used to determine the horizontal outline points that this processor has
         typename std::map<int ,  PntsInfo<dim> >::iterator it;
-        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            if (!it->second.isEmpty)
-                pointsXY[my_rank].push_back(it->second.PNT);
-        }
-
-        // Next we will create polygons outlines from the points that each processor currently has.
-        // This function receives a list os single points and creates a polygon. Then the polygons
-        // are transfered to all processors
-        if (dim == 2)
+        if (dim == 2){
+            for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+                if (!it->second.isEmpty)
+                    pointsXY[my_rank].push_back(it->second.PNT);
+            }
             create_outline_polygon<dim>(pointsXY, mpi_communicator);
+        }
         else if (dim == 3){
             Outlines[my_rank].serialize();
+            //std::cout << "Rank " << my_rank << " has Serialized " << Outlines[my_rank].serialized_dbls.size() << std::endl;
             // Each processor will sent its serialized polygons
             std::vector<int> n_ints_per_proc(n_proc);
             std::vector<int> n_dbls_per_proc(n_proc);
@@ -570,6 +568,9 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             std::vector< std::vector<double> > temp_dbls(n_proc);
             temp_ints.at(my_rank) = Outlines[my_rank].serialized_ints;
             temp_dbls.at(my_rank) = Outlines[my_rank].serialized_dbls;
+
+            //std::cout << "Rank " << my_rank << " has " << temp_dbls.at(my_rank).size() << " | " << Outlines[my_rank].serialized_dbls.size() << std::endl;
+
 
             Send_receive_size(static_cast<unsigned int>(temp_ints[my_rank].size()), n_proc, n_ints_per_proc, mpi_communicator);
             Send_receive_size(static_cast<unsigned int>(temp_dbls[my_rank].size()), n_proc, n_dbls_per_proc, mpi_communicator);
@@ -611,7 +612,13 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 if (dim == 2)
                     it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXY, my_rank);
                 else if (dim == 3){
-                    it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXYcgal, my_rank);
+                    for (unsigned int ii = 0; ii < Outlines.size(); ++ii){
+                        if (my_rank == ii)
+                            continue;
+                        if (Outlines[ii].isPointInside(it->second.PNT)){
+                            it->second.shared_proc.push_back(ii);
+                        }
+                    }
                 }
             }
         }
