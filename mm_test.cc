@@ -343,10 +343,10 @@ int main (int argc, char **argv){
     deallog.depth_console (1);
 
     //srand (time(NULL));
-    int rr = time(NULL);
-    std::cout << rr << std::endl;
-    //srand(1517231878);
-    srand(rr);
+    //int rr = time(NULL);
+    //std::cout << rr << std::endl;
+    srand(1517231878);
+    //srand(rr);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
     mm_test<3> mm;

@@ -202,9 +202,7 @@ private:
     double dbg_scale_x;
     double dbg_scale_z;
 
-    //std::vector<Polygon_Outline<dim-1>> Outlines;
-    Polygon_Outline<dim-1> Outlines;
-
+    std::vector<Polygon_Outline<dim-1>> Outlines;
 
 };
 
@@ -359,7 +357,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     pcout << "Update XYZ structure...for: " << prefix  << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
-    //Outlines.resize(n_proc,Polygon_Outline<dim-1>());
+    Outlines.resize(n_proc,Polygon_Outline<dim-1>());
     typename DoFHandler<dim>::active_cell_iterator
         cell = mesh_dof_handler.begin_active(),
         endc = mesh_dof_handler.end();
@@ -520,10 +518,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 Point<dim-1> ll = Point<dim-1>(it->second.pnt[0], it->second.pnt[1]);it++;
                 cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));
                 cell_pnt.push_back(ll);
-                Outlines.addPolygon(cell_pnt);
-                if (my_rank == 1){
-                    Outlines.PrintPolygons(my_rank);
-                }
+                Outlines[my_rank].addPolygon(cell_pnt);
             }
             //if (my_rank == 0)
             //    std::cout << "+++++++++ Finish Second part +++++++++" << std::endl;
@@ -535,7 +530,12 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
     make_dof_ij_map();
 
-    //Outlines.PrintPolygons(my_rank);
+    //Outlines[my_rank].PrintPolygons(my_rank);
+    //if (my_rank == 0){
+    //    std::vector<int> ints;
+    //    std::vector<double> dbls;
+    //    Outlines[my_rank].serialize();
+    //}
 
 
     MPI_Barrier(mpi_communicator);
@@ -559,16 +559,43 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         // Next we will create polygons outlines from the points that each processor currently has.
         // This function receives a list os single points and creates a polygon. Then the polygons
         // are transfered to all processors
-        create_outline_polygon<dim>(pointsXY, mpi_communicator);
+        if (dim == 2)
+            create_outline_polygon<dim>(pointsXY, mpi_communicator);
+        else if (dim == 3){
+            Outlines[my_rank].serialize();
+            // Each processor will sent its serialized polygons
+            std::vector<int> n_ints_per_proc(n_proc);
+            std::vector<int> n_dbls_per_proc(n_proc);
+            std::vector< std::vector<int> > temp_ints(n_proc);
+            std::vector< std::vector<double> > temp_dbls(n_proc);
+            temp_ints.at(my_rank) = Outlines[my_rank].serialized_ints;
+            temp_dbls.at(my_rank) = Outlines[my_rank].serialized_dbls;
 
+            Send_receive_size(static_cast<unsigned int>(temp_ints[my_rank].size()), n_proc, n_ints_per_proc, mpi_communicator);
+            Send_receive_size(static_cast<unsigned int>(temp_dbls[my_rank].size()), n_proc, n_dbls_per_proc, mpi_communicator);
 
-        if (dim == 3){// in 3D we convert the vector pointsXY to cgal version
-            for (unsigned int i = 0; i < pointsXY.size(); ++i){
-                for (unsigned int j = 0; j < pointsXY[i].size(); ++j){
-                    pointsXYcgal[i].push_back(ine_Point2(pointsXY[i][j][0], pointsXY[i][j][1]));
-                }
+            Sent_receive_data<int>(temp_ints, n_ints_per_proc, my_rank, mpi_communicator, MPI_INT);
+            Sent_receive_data<double>(temp_dbls, n_dbls_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
+
+            for (unsigned int i = 0; i < n_proc; ++i){
+                if (i == my_rank)
+                    continue;
+                Outlines[i].serialized_ints = temp_ints[i];
+                Outlines[i].serialized_dbls = temp_dbls[i];
+                Outlines[i].deserialize();
             }
         }
+
+
+
+
+//        if (dim == 3){// in 3D we convert the vector pointsXY to cgal version
+//            for (unsigned int i = 0; i < pointsXY.size(); ++i){
+//                for (unsigned int j = 0; j < pointsXY[i].size(); ++j){
+//                    pointsXYcgal[i].push_back(ine_Point2(pointsXY[i][j][0], pointsXY[i][j][1]));
+//                }
+//            }
+//        }
 
 
 
