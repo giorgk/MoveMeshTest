@@ -114,18 +114,18 @@ void mm_test<dim>::refine_transfer(std::string prefix){
     std::cout << "Number of active cells Before: "
                 << triangulation.n_active_cells()
                 << std::endl;
-    pcout << "dofs 2" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+    std::cout << "dofs 2: " << mesh_dof_handler.n_dofs() << std::endl << std::flush;
     // execute the actual refinement
     triangulation.execute_coarsening_and_refinement ();
 
     std::cout << "Number of active cells After: "
                 << triangulation.n_active_cells()
                 << std::endl;
-    pcout << "dofs 3" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+    std::cout << "dofs 3: " << mesh_dof_handler.n_dofs() << std::endl << std::flush;
 
     //For the mesh
     mesh_dof_handler.distribute_dofs(mesh_fe); // distribute the dofs again
-    pcout << "dofs 4" << mesh_dof_handler.n_dofs() << std::endl << std::flush;
+    std::cout << "dofs 4: " << mesh_dof_handler.n_dofs() << std::endl << std::flush;
     mesh_locally_owned = mesh_dof_handler.locally_owned_dofs();
     DoFTools::extract_locally_relevant_dofs (mesh_dof_handler, mesh_locally_relevant);
 
@@ -163,7 +163,7 @@ void mm_test<dim>::run(){
                                  pcout,
                                  "iter0");
 
-
+    return;
 
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
@@ -228,7 +228,7 @@ void mm_test<dim>::run(){
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer("refine0");
 
-    return;
+    //return;
 
     // Then we need to update the custon mesh structure after any change of the triangulation
     mesh_struct.updateMeshStruct(mesh_dof_handler,
@@ -345,7 +345,7 @@ int main (int argc, char **argv){
     //srand (time(NULL));
     //int rr = time(NULL);
     //std::cout << rr << std::endl;
-    srand(1517231878);
+    srand(1517505046);
     //srand(rr);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 

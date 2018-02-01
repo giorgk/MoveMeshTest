@@ -5,6 +5,8 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/algorithms/assign.hpp>
+#include <boost/geometry/algorithms/buffer.hpp>
+#include <boost/foreach.hpp>
 
 #include <deal.II/base/point.h>
 
@@ -47,6 +49,7 @@ class Polygon_Outline{
 public:
     Polygon_Outline();
     std::vector<b_polygon> Polygons;
+    boost::geometry::model::multi_polygon<b_polygon> mPoly;
 
     void addPolygon(std::vector<dealii::Point<dim>> newPoly);
 
@@ -60,6 +63,8 @@ public:
 
     void serialize();
     void deserialize();
+
+    void test_buffer(std::vector<dealii::Point<dim>> p);
 
     //void list_coordinates(b_point const& p);
 
@@ -95,28 +100,45 @@ void Polygon_Outline<dim>::addPolygon(std::vector<dealii::Point<dim> > newPoly){
     }
     boost::geometry::assign_points(b_newpoly, pnts);
     boost::geometry::correct(b_newpoly);
+
     //if (rank == 1)
     //    boost::geometry::dsv(b_newpoly);
 
     if (Polygons.size() == 0){
         Polygons.push_back(b_newpoly);
+        mPoly.push_back(b_newpoly);
     }else{
         std::vector<b_polygon> unionRes;
-        bool is_new = true;
+        bool added = false;
         for (unsigned int i = 0; i < Polygons.size(); ++i){
-            boost::geometry::union_(Polygons[i], b_newpoly, unionRes);
+            if(!boost::geometry::intersects(Polygons[i]) && !boost::geometry::intersects(b_newpoly)){
+                boost::geometry::union_(Polygons[i], b_newpoly, unionRes);
+                if (unionRes.size() == 1){
+                    b_polygon simplified;
+                    boost::geometry::simplify(unionRes[0], simplified, 0.01);
+                    boost::geometry::correct(simplified);
+                    if (!boost::geometry::intersects(simplified)){
+                        Polygons.at(i) = simplified;
+                        added = true;
+                        break;
+                    }
+                }
+
+            }
+
+//            try{
+//                boost::geometry::union_(Polygons[i], b_newpoly, unionRes);
+//                success = true;
+//            }
+//            catch(...){
+//                std::cout << "Poly: " << boost::geometry::dsv(Polygons[i]) << std::endl;
+//                std::cout << "newPoly: " << boost::geometry::dsv(b_newpoly) << std::endl;
+//            }
             //if (rank == 1)
             //    std::cout << "union: " << unionRes.size() << std::endl;
-            if (unionRes.size() == 1){
-                b_polygon simplified;
-                boost::geometry::simplify(unionRes[0], simplified, 0.01);
-                Polygons.at(i) = simplified;
-                is_new = false;
-                break;
-            }
         }
 
-        if (is_new){
+        if (!added){
             Polygons.push_back(b_newpoly);
         }
 
@@ -156,15 +178,19 @@ void Polygon_Outline<dim>::PrintdealPoly(std::vector<dealii::Point<dim> > poly){
 template<int dim>
 void Polygon_Outline<dim>::condense(){
     std::vector<int> dlt;
+    if (Polygons.size() < 2)
+        return;
     for (unsigned int i = 0; i < Polygons.size(); ++i){
         for (unsigned int j = i+1; j < Polygons.size(); ++j){
             std::vector<b_polygon> unionRes;
-            boost::geometry::union_(Polygons[i], Polygons[j], unionRes);
-            if (unionRes.size() == 1){
-                b_polygon simplified;
-                boost::geometry::simplify(unionRes[0], simplified, 0.01);
-                Polygons.at(i) = simplified;
-                dlt.push_back(j);
+            if (!boost::geometry::intersects(Polygons[i]) && !boost::geometry::intersects(Polygons[j])){
+                boost::geometry::union_(Polygons[i], Polygons[j], unionRes);
+                if (unionRes.size() == 1){
+                    b_polygon simplified;
+                    boost::geometry::simplify(unionRes[0], simplified, 0.01);
+                    Polygons.at(i) = simplified;
+                    dlt.push_back(j);
+                }
             }
         }
     }
@@ -195,8 +221,8 @@ void Polygon_Outline<dim>::serialize(){
     serialized_ints.push_back(Polygons.size());
     for (unsigned int i = 0; i < Polygons.size(); ++i){
         // For each polygon send the size
-        int Nv = boost::geometry::num_points(Polygons[i]);
-        serialized_ints.push_back(Nv);
+        int Nv = 0;
+
 //        std::vector<double> x, y;
 //        access_coords<b_point> AC(x,y);
 //        boost::geometry::for_each_point(Polygons[i], access_coords<b_point>( x, y));
@@ -208,8 +234,10 @@ void Polygon_Outline<dim>::serialize(){
                   it != boost::end(boost::geometry::exterior_ring(Polygons[i])); ++it){
             serialized_dbls.push_back(boost::geometry::get<0>(*it));
             serialized_dbls.push_back(boost::geometry::get<1>(*it));
+            Nv++;
             //std::cout << boost::geometry::get<0>(*it) << std::endl;
         }
+        serialized_ints.push_back(Nv);
     }
 }
 
@@ -220,6 +248,7 @@ void Polygon_Outline<dim>::deserialize(){
     int d_cnt = 0;
     if (serialized_ints.size()>0){
         unsigned int Npoly = serialized_ints.at(i_cnt); i_cnt++;
+        std::cout << "Npoly: " << Npoly << std::endl;
         for (unsigned int i = 0; i < Npoly; ++i){
             std::vector<dealii::Point<dim> > poly;
             unsigned int nv = serialized_ints.at(i_cnt); i_cnt++;
@@ -238,6 +267,44 @@ void Polygon_Outline<dim>::deserialize(){
 //void Polygon_Outline<dim>::list_coordinates(b_point const& p){
 //    std::cout << "x = " << boost::geometry::get<0>(p) << " y = " << boost::geometry::get<1>(p) << std::endl;
 //}
+
+template <int dim>
+void Polygon_Outline<dim>::test_buffer(std::vector<dealii::Point<dim>> p){
+    const double buffer_distance = 500;
+    const int points_per_circle = 36;
+    boost::geometry::strategy::buffer::distance_symmetric<double> distance_strategy(buffer_distance);
+    boost::geometry::strategy::buffer::point_circle circle_strategy(points_per_circle);
+    boost::geometry::strategy::buffer::side_straight side_strategy;
+    boost::geometry::strategy::buffer::end_flat end_strategy;
+    boost::geometry::strategy::buffer::join_round join_strategy(points_per_circle);
+
+    boost::geometry::model::multi_polygon<b_polygon> result, simplified;
+
+    boost::geometry::model::multi_point<b_point> mp;
+    for (unsigned int i = 0; i < p.size(); ++i){
+        boost::geometry::append(mp, b_point(p[i][0],p[i][1]));
+    }
+
+    boost::geometry::buffer(mp, result,
+                    distance_strategy, side_strategy,
+                    join_strategy, end_strategy, circle_strategy);
+
+    boost::geometry::simplify(result, simplified, 100);
+
+
+
+    BOOST_FOREACH(b_polygon const& p, simplified){
+        for (auto it = boost::begin(boost::geometry::exterior_ring(p));
+             it != boost::end(boost::geometry::exterior_ring(p)); ++it){
+            std::cout << boost::geometry::get<0>(*it) << ", " << boost::geometry::get<1>(*it)<< std::endl;
+        }
+            //std::cout << "Buffer: " << boost::geometry::dsv(p) << std::endl;
+    }
+//    for (auto it = boost::begin(boost::geometry::exterior_ring(simplified));
+//         it != boost::end(boost::geometry::exterior_ring(simplified)); ++it){
+//        std::cout << boost::geometry::get<0>(*it) << ", " << boost::geometry::get<1>(*it)<< std::endl;
+//    }
+}
 
 
 #endif // POLYGON_OUTLINE_H

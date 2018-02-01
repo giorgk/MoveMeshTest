@@ -510,16 +510,23 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             }
 
             // In 3D create add the projection of this cell to the outline of this processor
-            if (dim == 3){
-                std::vector<Point<dim-1>> cell_pnt;
-                it = curr_cell_info.begin();
-                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
-                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
-                Point<dim-1> ll = Point<dim-1>(it->second.pnt[0], it->second.pnt[1]);it++;
-                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));
-                cell_pnt.push_back(ll);
-                Outlines[my_rank].addPolygon(cell_pnt);
-            }
+//            if (dim == 3){
+//                std::vector<Point<dim-1>> cell_pnt;
+//                it = curr_cell_info.begin();
+//                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
+//                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
+//                Point<dim-1> ll = Point<dim-1>(it->second.pnt[0], it->second.pnt[1]);it++;
+//                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));
+//                cell_pnt.push_back(ll);
+//                //if (prefix.compare("iter7")==0 && my_rank == 1){
+//                //    Outlines[my_rank].PrintdealPoly(cell_pnt);
+//                    //std::cout << "MADE IT HERE??? " << my_rank << std::endl;
+//                //}
+//                Outlines[my_rank].addPolygon(cell_pnt);
+//                //if (prefix.compare("iter7")==0  && my_rank == 1){
+//                //    Outlines[my_rank].PrintPolygons(my_rank);
+//                //}
+//            }
             //if (my_rank == 0)
             //    std::cout << "+++++++++ Finish Second part +++++++++" << std::endl;
             //pcout << "----------------------------------------------------------------" << std::endl;
@@ -544,8 +551,16 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     //dbg_meshStructInfo2D("before2D", my_rank);
     dbg_meshStructInfo3D("before3D_Struct_" + prefix + "_", my_rank);
+    {
+        typename std::map<int ,  PntsInfo<dim> >::iterator it;
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            if (!it->second.isEmpty)
+                pointsXY[my_rank].push_back(it->second.PNT);
+        }
 
-    //return;
+        Outlines[my_rank].test_buffer(pointsXY[my_rank]);
+    }
+    return;
 
     if (n_proc > 1){
         // We will make a list of points XY point that this processor holds.
@@ -559,6 +574,12 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             create_outline_polygon<dim>(pointsXY, mpi_communicator);
         }
         else if (dim == 3){
+            for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+                if (!it->second.isEmpty)
+                    pointsXY[my_rank].push_back(it->second.PNT);
+            }
+
+
             Outlines[my_rank].serialize();
             //std::cout << "Rank " << my_rank << " has Serialized " << Outlines[my_rank].serialized_dbls.size() << std::endl;
             // Each processor will sent its serialized polygons
@@ -569,7 +590,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             temp_ints.at(my_rank) = Outlines[my_rank].serialized_ints;
             temp_dbls.at(my_rank) = Outlines[my_rank].serialized_dbls;
 
-            //std::cout << "Rank " << my_rank << " has " << temp_dbls.at(my_rank).size() << " | " << Outlines[my_rank].serialized_dbls.size() << std::endl;
+            std::cout << "Rank " << my_rank << " has " << temp_dbls.at(my_rank).size() << " | " << Outlines[my_rank].serialized_dbls.size() << std::endl;
 
 
             Send_receive_size(static_cast<unsigned int>(temp_ints[my_rank].size()), n_proc, n_ints_per_proc, mpi_communicator);
@@ -720,7 +741,7 @@ void Mesh_struct<dim>::reset(){
     PointsMap.clear();
     dof_ij.clear();
     CGALset.clear();
-    //Outlines.clear();
+    Outlines.clear();
 }
 
 template <int dim>
