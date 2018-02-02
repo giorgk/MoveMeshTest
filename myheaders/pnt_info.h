@@ -60,8 +60,12 @@ public:
     //! This is a list of processors id that share this node
     std::vector <int> shared_proc;
 
+    //! For each processor in the #shared_proc list keep the key value that this processor can find this point
+    //! THis is used to avoid communicate the coordinates back and forth
+    std::vector<int> key_val_shared_proc;
+
     //! This is the id that one can find this point in the #Mesh_struct::PointsMap map
-    //! Essentiall PointsMap.find(find_id) should return an iterator to this point
+    //! Essentially #Mesh_struct::PointsMap.find(find_id) should return an iterator to this point.
     int find_id;
 
     /*!

@@ -510,12 +510,15 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
     if (n_proc > 1){
-        // Each processor would make a list of the XY
+        // Each processor will make a list of the XY coordinates
         std::vector<std::vector<double> > Xcoords(n_proc);
         std::vector<std::vector<double> > Ycoords(n_proc);
+        // an a list if the keys where the coordinates correspond
+        std::vector<std::vector<int> > key_map(n_proc);
         std::vector<int> n_points_per_proc(n_proc);
         typename std::map<int ,  PntsInfo<dim> >::iterator it, itf;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            key_map[my_rank].push_back(it->first);
             Xcoords[my_rank].push_back(it->second.PNT[0]);
             if (dim == 3)
                 Ycoords[my_rank].push_back(it->second.PNT[1]);
@@ -523,14 +526,18 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         }
 
         Send_receive_size(static_cast<unsigned int>(Xcoords[my_rank].size()), n_proc, n_points_per_proc, mpi_communicator);
+        Sent_receive_data<int>(key_map, n_points_per_proc, my_rank, mpi_communicator, MPI_INT);
         Sent_receive_data<double>(Xcoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
         if (dim == 3)
             Sent_receive_data<double>(Ycoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
-
+        return;
 
         // Each processor knows what xy points the other processor have
-        // I'm proc my_rank and I loop though the points that the other processors have.
-        // If I share points with the processor i I flag it as shared by adding the id of the processor that I share this point with
+        // Lets suppose that I'm processor 0 and talk with the other processors
+        // -I'm processor 0 and I will loop though the points (XYcoords/Keys) that the other processors have sent me.
+        //  If I find any point in thoses lists I received from the other processors in my PointMap
+        //  I will flag it as shared and I'll add the id of the processor that I share the point with
+        //  I will keep the key that the processor has the point in his Point map
         for (unsigned int i = 0; i < n_proc; ++i){
             if (i == my_rank)
                 continue;
@@ -545,6 +552,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     itf = PointsMap.find(id);
                     if (itf != PointsMap.end()){
                         itf->second.shared_proc.push_back(i);
+                        itf->second.key_val_shared_proc.push_back(key_map[i][j]);
                     }
                 }
             }
@@ -572,7 +580,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
         // -----------------Send those points to every processor------------
 
-        SendReceive_PntsInfo(sharedPoints, my_rank, n_proc, z_thres, mpi_communicator);
+        SendReceive_PntsInfo(sharedPoints, PointsMap, my_rank, n_proc, z_thres, mpi_communicator);
         std::cout << "Finish Send and Receive------------" << std::endl;
 
 
