@@ -30,7 +30,7 @@ public:
      * \param level is the level of the node
      * \param constr is true if its a hanging node
      */
-    Zinfo(double z, int dof, bool constr, std::vector<int> cnstr_nodes, int istop, int isbot, std::map<int,int > dof_conn);
+    Zinfo(double z, int dof, std::vector<int> cnstr_nodes, int istop, int isbot, std::map<int,int > dof_conn);
 
     //! This is a map that holds the dofs of the triangulation points as key,
     //! and the hanging flag as value for the points that this is connected with.
@@ -128,7 +128,7 @@ public:
     int isBot;
 };
 
-Zinfo::Zinfo(double z_in, int dof_in, bool constr, std::vector<int> cnstr_nodes, int istop, int isbot,  std::map<int,int> conn){
+Zinfo::Zinfo(double z_in, int dof_in, std::vector<int> cnstr_nodes, int istop, int isbot,  std::map<int,int> conn){
     // To construct a new point we need to know the elevation,
     // the dof, the level and whether is a hanging node.
     // Although the ids should not be negative we allow to create Zinfo points with negative ids
@@ -140,12 +140,8 @@ Zinfo::Zinfo(double z_in, int dof_in, bool constr, std::vector<int> cnstr_nodes,
 
     z = z_in;
     dof = dof_in;
-    if (constr){
-        hanging = 1;
-        add_constraint_nodes(cnstr_nodes);
-    }
-    else
-        hanging = 0;
+    add_constraint_nodes(cnstr_nodes);
+
 
     isTop = istop;
     isBot = isbot;
@@ -233,6 +229,7 @@ void Zinfo::reset(){
 }
 
 void Zinfo::add_constraint_nodes(std::vector<int> cnstr_nodes){
+
     for (unsigned int i = 0; i < cnstr_nodes.size(); ++i){
         if (cnstr_nodes[i] == dof)
             continue;
@@ -243,9 +240,11 @@ void Zinfo::add_constraint_nodes(std::vector<int> cnstr_nodes){
                 break;
             }
         }
-        if (addthis)
+        if (addthis){
             cnstr_nds.push_back(cnstr_nodes[i]);
+        }
     }
+    hanging = static_cast<int>(cnstr_nodes.size() > 0);
 }
 
 #endif // ZINFO_H

@@ -201,9 +201,6 @@ private:
     void dbg_meshStructInfo3D(std::string filename, unsigned int n_proc);
     double dbg_scale_x;
     double dbg_scale_z;
-
-    std::vector<Polygon_Outline<dim-1>> Outlines;
-
 };
 
 template <int dim>
@@ -237,6 +234,7 @@ PntIndices Mesh_struct<dim>::add_new_point(Point<dim-1>p, Zinfo zinfo){
     if ( id < 0 ){
         // this is a new point and we add it to the map
         PntsInfo<dim> tempPnt(p, zinfo);
+        tempPnt.find_id = _counter;
         PointsMap[_counter] = tempPnt;
 
         //... to the Cgal structure
@@ -357,7 +355,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     pcout << "Update XYZ structure...for: " << prefix  << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
-    Outlines.resize(n_proc,Polygon_Outline<dim-1>());
     typename DoFHandler<dim>::active_cell_iterator
         cell = mesh_dof_handler.begin_active(),
         endc = mesh_dof_handler.end();
@@ -475,7 +472,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 }
 
                 // Now create a zinfo variable
-                Zinfo zinfo(it->second.pnt[dim-1], it->second.dof,it->second.hang, temp_cnstr, it->second.isTop, it->second.isBot, connectedNodes);
+                Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, temp_cnstr, it->second.isTop, it->second.isBot, connectedNodes);
 
                 // and a point
                 Point<dim-1> ptemp;
@@ -532,7 +529,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
         // Each processor knows what xy points the other processor have
-
+        // I'm proc my_rank and I loop though the points that the other processors have.
+        // If I share points with the processor i I flag it as shared by adding the id of the processor that I share this point with
         for (unsigned int i = 0; i < n_proc; ++i){
             if (i == my_rank)
                 continue;
@@ -569,7 +567,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
 
-        std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << std::endl;
+        std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << " out of " << PointsMap.size() << std::endl;
         MPI_Barrier(mpi_communicator);
 
         // -----------------Send those points to every processor------------
@@ -647,7 +645,6 @@ void Mesh_struct<dim>::reset(){
     PointsMap.clear();
     dof_ij.clear();
     CGALset.clear();
-    Outlines.clear();
 }
 
 template <int dim>

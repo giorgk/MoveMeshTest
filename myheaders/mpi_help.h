@@ -137,13 +137,16 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
         for (unsigned int ii = 0; ii < Pnts[my_rank][i].shared_proc.size(); ++ii){
             int_data[my_rank].push_back(Pnts[my_rank][i].shared_proc[ii]);
         }
-        // Then send the number of Z coordinates Nz in the list
+        // Then send the number of points Nz in the Zlist list
         int_data[my_rank].push_back(Pnts[my_rank][i].Zlist.size()); //number of Z coordinates Nz in the list
         for (unsigned int j = 0; j < Pnts[my_rank][i].Zlist.size(); ++j){ // then send the following info Nz times
-            int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].hanging); // hanging
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].dof);     // dof
-            int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].isTop);
-            int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].isBot);
+            if (Pnts[my_rank][i].Zlist[j].isTop == 1) // instead of sending both top and bottom we will send 1 int depending the case
+                int_data[my_rank].push_back(1);
+            else if (Pnts[my_rank][i].Zlist[j].isBot == 1)
+                int_data[my_rank].push_back(2);
+            else
+                int_data[my_rank].push_back(0);
             int_data[my_rank].push_back(Pnts[my_rank][i].Zlist[j].dof_conn.size());   // Send the number of connections Nconn for this point
             for (it_cn = Pnts[my_rank][i].Zlist[j].dof_conn.begin(); it_cn != Pnts[my_rank][i].Zlist[j].dof_conn.end(); ++it_cn){// for each Nconn send the following
                 int_data[my_rank].push_back(it_cn->first); // the dof of the connected node
@@ -209,12 +212,13 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
             for (int j = 0; j < Nz; ++j){
                 z = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
                 //if (my_rank == dbg_proc) std::cout << "- - - -I'm rank " << my_rank << ", z: " << z << std::endl;
-                int hng = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
-                //if (my_rank == dbg_proc) std::cout << "I'm rank " << my_rank << ", hng: " << hng << std::endl;
                 int dof = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
                 //if (my_rank == dbg_proc) std::cout << "I'm rank " << my_rank << ", dof: " << dof << std::endl;
-                int istop = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
-                int isbot = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                int top_bot_flag = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                int istop, isbot;
+                if (top_bot_flag == 1) {istop = 1;isbot=0;}
+                else if (top_bot_flag == 2){istop = 0;isbot=1;}
+                else{istop = 0;isbot=0;}
 
                 int Nconn = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
                 //if (my_rank == dbg_proc) std::cout << "I'm rank " << my_rank << ", Nconn: " << Nconn << std::endl;
@@ -233,7 +237,7 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
                     cnstr_dofs.push_back(get_v<int>(int_data, i_proc, i_cnt));i_cnt++;
                 }
 
-                Zinfo zinfo(z, dof, hng, cnstr_dofs, istop, isbot, conn);
+                Zinfo zinfo(z, dof, cnstr_dofs, istop, isbot, conn);
                 Point<dim-1> p;
                 p[0] = x;
                 if (dim == 3)

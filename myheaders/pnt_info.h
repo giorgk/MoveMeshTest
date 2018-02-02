@@ -60,6 +60,10 @@ public:
     //! This is a list of processors id that share this node
     std::vector <int> shared_proc;
 
+    //! This is the id that one can find this point in the #Mesh_struct::PointsMap map
+    //! Essentiall PointsMap.find(find_id) should return an iterator to this point
+    int find_id;
+
     /*!
      * \brief it is possible after a reset that not all the listed nodes have positive dof
      * Actually the vertices with negative id either no longer exist due to coarsening
