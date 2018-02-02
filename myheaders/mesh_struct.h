@@ -488,48 +488,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 // Try to add it in the structure
                 //std::cout <<"Zdof: " << zinfo.dof << std::endl;
                 PntIndices id_in_map = add_new_point(ptemp, zinfo); // MAYBE WE DONT NEED TO RETURN ANYTHING
-
-                //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
-                //    std::cout<< "Made it here IV " << std::endl;
-
-                // This will create a list of XY points on every processor
-                //if (id_in_map.isNew)
-                //pointsXY[my_rank].push_back(ptemp);
-
-                //if (id_in_map.XYind < 0)
-                //    std::cerr << "Something went really wrong while trying to insert a new point into the mesh struct" << std::endl;
-                //else{
-                //    XYind_p_map.insert(std::pair<int,Point<dim-1>>(id_in_map.XYind,ptemp ));
-                //    bool tf = any_ghost_neighbor<dim>(cell);
-                //    if (tf)
-                //        PointsMap[id_in_map.XYind].have_to_send = 1;
-                //}
-                //if (my_rank == 0 && dbg_cnt >= 62){
-                //    std::cout << "b: " << it->first << ", " << it->second.dof << std::endl;
-                //}
             }
-
-            // In 3D create add the projection of this cell to the outline of this processor
-//            if (dim == 3){
-//                std::vector<Point<dim-1>> cell_pnt;
-//                it = curr_cell_info.begin();
-//                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
-//                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));it++;
-//                Point<dim-1> ll = Point<dim-1>(it->second.pnt[0], it->second.pnt[1]);it++;
-//                cell_pnt.push_back(Point<dim-1>(it->second.pnt[0], it->second.pnt[1]));
-//                cell_pnt.push_back(ll);
-//                //if (prefix.compare("iter7")==0 && my_rank == 1){
-//                //    Outlines[my_rank].PrintdealPoly(cell_pnt);
-//                    //std::cout << "MADE IT HERE??? " << my_rank << std::endl;
-//                //}
-//                Outlines[my_rank].addPolygon(cell_pnt);
-//                //if (prefix.compare("iter7")==0  && my_rank == 1){
-//                //    Outlines[my_rank].PrintPolygons(my_rank);
-//                //}
-//            }
-            //if (my_rank == 0)
-            //    std::cout << "+++++++++ Finish Second part +++++++++" << std::endl;
-            //pcout << "----------------------------------------------------------------" << std::endl;
         }
     }
 
@@ -551,100 +510,47 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
     //dbg_meshStructInfo2D("before2D", my_rank);
     dbg_meshStructInfo3D("before3D_Struct_" + prefix + "_", my_rank);
-    {
-        typename std::map<int ,  PntsInfo<dim> >::iterator it;
-        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            if (!it->second.isEmpty)
-                pointsXY[my_rank].push_back(it->second.PNT);
-        }
 
-        Outlines[my_rank].test_buffer(pointsXY[my_rank]);
-    }
-    return;
 
     if (n_proc > 1){
-        // We will make a list of points XY point that this processor holds.
-        // This list is used to determine the horizontal outline points that this processor has
-        typename std::map<int ,  PntsInfo<dim> >::iterator it;
-        if (dim == 2){
-            for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-                if (!it->second.isEmpty)
-                    pointsXY[my_rank].push_back(it->second.PNT);
-            }
-            create_outline_polygon<dim>(pointsXY, mpi_communicator);
-        }
-        else if (dim == 3){
-            for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-                if (!it->second.isEmpty)
-                    pointsXY[my_rank].push_back(it->second.PNT);
-            }
-
-
-            Outlines[my_rank].serialize();
-            //std::cout << "Rank " << my_rank << " has Serialized " << Outlines[my_rank].serialized_dbls.size() << std::endl;
-            // Each processor will sent its serialized polygons
-            std::vector<int> n_ints_per_proc(n_proc);
-            std::vector<int> n_dbls_per_proc(n_proc);
-            std::vector< std::vector<int> > temp_ints(n_proc);
-            std::vector< std::vector<double> > temp_dbls(n_proc);
-            temp_ints.at(my_rank) = Outlines[my_rank].serialized_ints;
-            temp_dbls.at(my_rank) = Outlines[my_rank].serialized_dbls;
-
-            std::cout << "Rank " << my_rank << " has " << temp_dbls.at(my_rank).size() << " | " << Outlines[my_rank].serialized_dbls.size() << std::endl;
-
-
-            Send_receive_size(static_cast<unsigned int>(temp_ints[my_rank].size()), n_proc, n_ints_per_proc, mpi_communicator);
-            Send_receive_size(static_cast<unsigned int>(temp_dbls[my_rank].size()), n_proc, n_dbls_per_proc, mpi_communicator);
-
-            Sent_receive_data<int>(temp_ints, n_ints_per_proc, my_rank, mpi_communicator, MPI_INT);
-            Sent_receive_data<double>(temp_dbls, n_dbls_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
-
-            for (unsigned int i = 0; i < n_proc; ++i){
-                if (i == my_rank)
-                    continue;
-                Outlines[i].serialized_ints = temp_ints[i];
-                Outlines[i].serialized_dbls = temp_dbls[i];
-                Outlines[i].deserialize();
-            }
-        }
-
-
-
-
-//        if (dim == 3){// in 3D we convert the vector pointsXY to cgal version
-//            for (unsigned int i = 0; i < pointsXY.size(); ++i){
-//                for (unsigned int j = 0; j < pointsXY[i].size(); ++j){
-//                    pointsXYcgal[i].push_back(ine_Point2(pointsXY[i][j][0], pointsXY[i][j][1]));
-//                }
-//            }
-//        }
-
-
-
-
-        //std::cout << "Rank: " << my_rank << " MADE IT to BB for " << prefix << std::endl;
-        MPI_Barrier(mpi_communicator);
-
-        // Identify which points each processor would need based on the outline polygons
+        // Each processor would make a list of the XY
+        std::vector<std::vector<double> > Xcoords(n_proc);
+        std::vector<std::vector<double> > Ycoords(n_proc);
+        std::vector<int> n_points_per_proc(n_proc);
+        typename std::map<int ,  PntsInfo<dim> >::iterator it, itf;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            // As we loop through the points we identify which processors this point
-            // lay inside their polygons
-            if (!it->second.isEmpty){
-                if (dim == 2)
-                    it->second.shared_proc = send_point<dim>(it->second.PNT, pointsXY, my_rank);
-                else if (dim == 3){
-                    for (unsigned int ii = 0; ii < Outlines.size(); ++ii){
-                        if (my_rank == ii)
-                            continue;
-                        if (Outlines[ii].isPointInside(it->second.PNT)){
-                            it->second.shared_proc.push_back(ii);
-                        }
+            Xcoords[my_rank].push_back(it->second.PNT[0]);
+            if (dim == 3)
+                Ycoords[my_rank].push_back(it->second.PNT[1]);
+
+        }
+
+        Send_receive_size(static_cast<unsigned int>(Xcoords[my_rank].size()), n_proc, n_points_per_proc, mpi_communicator);
+        Sent_receive_data<double>(Xcoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
+        if (dim == 3)
+            Sent_receive_data<double>(Ycoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
+
+
+        // Each processor knows what xy points the other processor have
+
+        for (unsigned int i = 0; i < n_proc; ++i){
+            if (i == my_rank)
+                continue;
+            for (unsigned int j = 0; j < Xcoords[i].size(); ++j){
+                Point<dim-1> p;
+                p[0] = Xcoords[i][j];
+                if (dim == 3)
+                    p[1] = Ycoords[i][j];
+
+                int id = check_if_point_exists(p);
+                if (id >=0){
+                    itf = PointsMap.find(id);
+                    if (itf != PointsMap.end()){
+                        itf->second.shared_proc.push_back(i);
                     }
                 }
             }
         }
-
-
 
         pcout << "exchange vertices between processors..." << std::endl << std::flush;
         // All vertices have been added to the PointsMap structure.
@@ -663,7 +569,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
 
-        //std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << std::endl;
+        std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << std::endl;
         MPI_Barrier(mpi_communicator);
 
         // -----------------Send those points to every processor------------

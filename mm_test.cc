@@ -163,7 +163,7 @@ void mm_test<dim>::run(){
                                  pcout,
                                  "iter0");
 
-    return;
+    //return;
 
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
