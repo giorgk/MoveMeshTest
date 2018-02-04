@@ -513,7 +513,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         // Each processor will make a list of the XY coordinates
         std::vector<std::vector<double> > Xcoords(n_proc);
         std::vector<std::vector<double> > Ycoords(n_proc);
-        // an a list if the keys where the coordinates correspond
+        // and a list of the keys where the coordinates correspond
         std::vector<std::vector<int> > key_map(n_proc);
         std::vector<int> n_points_per_proc(n_proc);
         typename std::map<int ,  PntsInfo<dim> >::iterator it, itf;
@@ -530,7 +530,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         Sent_receive_data<double>(Xcoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
         if (dim == 3)
             Sent_receive_data<double>(Ycoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
-        return;
+
 
         // Each processor knows what xy points the other processor have
         // Lets suppose that I'm processor 0 and talk with the other processors
@@ -558,29 +558,37 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             }
         }
 
+
+
+
         pcout << "exchange vertices between processors..." << std::endl << std::flush;
         // All vertices have been added to the PointsMap structure.
         // we loop through each vertex and store to a separate vector
         // those that require communication and they are actively used
 
         std::vector< std::vector<PntsInfo<dim> > > sharedPoints(n_proc);
-
+        // just for debuging check how many points will sent and how many not
+        int n_shared = 0; int n_not_shared = 0;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
             if (it->second.shared_proc.size() > 0){
                 // IN the old code I was checking for positive dofs.
                 // I have to see whether I should check that again
                 sharedPoints[my_rank].push_back(it->second);
+                n_shared++;
+            }else{
+                n_not_shared++;
             }
         }
 
 
 
-        std::cout << "I'm rank " << my_rank << " and I'll send " << sharedPoints[my_rank].size() << " out of " << PointsMap.size() << std::endl;
+        std::cout << "I'm rank " << my_rank << " and I'll share " << n_shared << " and not share " << n_not_shared << std::endl;
         MPI_Barrier(mpi_communicator);
 
         // -----------------Send those points to every processor------------
 
         SendReceive_PntsInfo(sharedPoints, PointsMap, my_rank, n_proc, z_thres, mpi_communicator);
+        return;
         std::cout << "Finish Send and Receive------------" << std::endl;
 
 

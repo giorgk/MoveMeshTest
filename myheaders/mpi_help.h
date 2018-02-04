@@ -7,6 +7,12 @@
 #include <mpi.h>
 #include "pnt_info.h"
 
+void print_size_msg(std::vector<std::vector<int>> v, int my_rank){
+    for (unsigned int i_proc = 0; i_proc < v.size(); ++i_proc){
+        std::cout << "I'm Rank: " << my_rank << " and I have from/for proc: " << i_proc << ": " << v[i_proc].size() << " data." << std::endl;
+    }
+}
+
 /*!
  * \brief Send_receive_size: Each processor sends and receives an integer
  * \param N This is the integer to be sent from this processor
@@ -128,12 +134,12 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
 
     std::vector<int> n_dofZ_per_proc(n_proc);
     std::vector<std::vector<int> > dofZ(n_proc);
-
+    std::map<int,int> dof_key;
     // First we will loop through the points that each processor has:
     //Example :
-    // -I'm processor 0 and I will send first all the dofs that correspond to my points
-    // in addition I'll keep a map where the keys will be the dof and the value a pair of
-    // indices
+    // -I'm processor 0 and I will send first all the dofs that correspond to my points that I share with other processors
+    // In addition I'll keep a map where the keys will be the dof and the value a pair of
+    // indices........ (Not implement yet)
     for (unsigned int i = 0; i < Pnts[my_rank].size(); ++i){
         dofZ[my_rank].push_back(Pnts[my_rank][i].shared_proc.size()); // Number of processors that share the point
         for (unsigned int k = 0; k < Pnts[my_rank][i].shared_proc.size(); ++k){
@@ -146,18 +152,30 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
         }
     }
 
+    //if (my_rank == 1){
+    //    for (unsigned int i = 0; i < dofZ[my_rank].size(); ++i){
+    //        std::cout << "--- " << dofZ[my_rank][i] << std::endl;
+    //    }
+    //}
+    //return;
     //Exchange the dofs of those points
     Send_receive_size(static_cast<unsigned int>(dofZ[my_rank].size()), n_proc, n_dofZ_per_proc, comm);
     Sent_receive_data<int>(dofZ, n_dofZ_per_proc, my_rank, comm, MPI_INT);
 
+    //print_size_msg(dofZ, my_rank);
+    //return;
+
     std::vector<std::vector<int> > Request_dof(n_proc);
+    std::map<int,int> unique_list_req_dofs;
     // now I will loop through the other processor dofs and I will find out which dofs I dont have and request for the remaining info
     for (unsigned int i = 0; i < n_proc; ++i){
+        //std::cout << "-------------" << i << "------------" << std::endl;
         if (i == my_rank)
             continue;
         std::vector<int> temp_dof_request;
         unsigned int i_cnt = 0;
-        for (unsigned j = 0; j < dofZ[i].size(); ++j){
+        while(true){
+           // std::cout << i_cnt << std::endl;
             int Nproc_share = get_v<int>(dofZ, i, i_cnt); i_cnt++;
             //std::vector <int> shared_proc;
             //std::vector <int> shared_proc_keys;
@@ -178,48 +196,75 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
             for (unsigned int k = 0; k < Ndofs; ++k){
                 int temp_dof = get_v<int>(dofZ, i, i_cnt); i_cnt++;
                 if (!isthisme) continue;
-
+                bool do_I_need = true;
                 // Check if I need this dof
                 if (it_map != PointsMap.end()){
                     // find if the temp dof exist
                     for (unsigned int kk = 0; kk < it_map->second.Zlist.size(); ++kk){
                         if (temp_dof == it_map->second.Zlist[kk].dof){
-                            temp_dof_request.push_back(temp_dof);
+                            do_I_need = false;
                             break;
                         }
                     }
+                    if (do_I_need){
+                        if (unique_list_req_dofs.find(temp_dof) == unique_list_req_dofs.end()){
+                            temp_dof_request.push_back(temp_dof);
+                            //if (my_rank == 2){
+                            //    std::cout << "rank 1 needs: " << temp_dof << " from " << i << std::endl;
+                            //}
+                            unique_list_req_dofs.insert(std::pair<int,int>(temp_dof, temp_dof));
+                        }
+                    }
+                }else {
+                    std::cout << "I didn't find the key" << std::endl;
                 }
+
             }
+            if (i_cnt >= dofZ[i].size())
+                break;
         }
         Request_dof[my_rank].push_back(i); // the processor we request the data from
         Request_dof[my_rank].push_back(temp_dof_request.size()); //the total number number of dofs that we want from this processor
         for (unsigned int k = 0; k < temp_dof_request.size(); ++k)
             Request_dof[my_rank].push_back(temp_dof_request[k]);
     }
-
+    // The Request_dof vector holds in my_rank position the dofs that the my_rank position is missing.
     std::vector<int> n_request_per_proc(n_proc);
     Send_receive_size(static_cast<unsigned int>(Request_dof[my_rank].size()), n_proc, n_request_per_proc, comm);
     Sent_receive_data<int>(Request_dof, n_request_per_proc, my_rank, comm, MPI_INT);
+
+    //print_size_msg(Request_dof, my_rank);
+    //return;
+
+    MPI_Barrier(comm);
+    if (my_rank == 2){
+        for (unsigned int i = 0; i < Request_dof[my_rank].size(); ++i){
+            std::cout << "Req: " << Request_dof[my_rank][i] << std::endl;
+        }
+    }
+    return;
 
     {
         // now loop through the requested dofs and pack the data the other processors need
         for (unsigned int i = 0; i < n_proc; ++i){
             if (i == my_rank)
                 continue;
+
             int i_cnt = 0;
-            while (i_cnt < Request_dof[i].size()){
-                int proc2sent = get_v<int>(Request_dof, i, i_cnt); i_cnt++;
-                int Ndofs_from_proc = get_v<int>(Request_dof, i, i_cnt); i_cnt++;
+            while (true){
+                int proc2send = get_v<int>(Request_dof, i, i_cnt); i_cnt++;
+                int Ndofs_request = get_v<int>(Request_dof, i, i_cnt); i_cnt++;
+
                 for (unsigned int j = 0; j < Ndofs_from_proc; ++j){
                     int req_dof = get_v<int>(Request_dof, i, i_cnt); i_cnt++;
-                    if (proc2sent == my_rank){// if I am supposed to sent this dof pack its data
-                        //@@@@@@@@@@@@@@@@@@@@##############@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                    if (proc2send == my_rank){// if I am supposed to send this dof pack its data
+
                     }
                 }
-            }
-            for (int j = 0; j < Request_dof[i].size(); ++j){
 
-
+                if (i_cnt >= Request_dof[i].size()){
+                    break;
+                }
             }
 
         }
