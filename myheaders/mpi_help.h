@@ -7,7 +7,8 @@
 #include <mpi.h>
 #include "pnt_info.h"
 
-void print_size_msg(std::vector<std::vector<int>> v, int my_rank){
+template <typename T>
+void print_size_msg(std::vector<std::vector<T>> v, int my_rank){
     for (unsigned int i_proc = 0; i_proc < v.size(); ++i_proc){
         std::cout << "I'm Rank: " << my_rank << " and I have from/for proc: " << i_proc << ": " << v[i_proc].size() << " data." << std::endl;
     }
@@ -107,20 +108,21 @@ T get_v(std::vector<std::vector<T> > v, unsigned int i, unsigned int j){
     return 0;
 }
 
-/*!
- * \brief Sent_receive_data: This function distributes a vector of type #PntsInfo class.
- * Before the function each processor knows only the values of #Pnts[#my_rank],
- * while after the execution of this function all the  #Pnts[0, ... #my_rank] are populated with values
- * \param Pnts Is a vector of vectors of type PntsInfo<dim> with size equal to n_proc.
- * This is the input and output of this function.
- * As input only the #my_rank element has data, and the ohter elements are emput.
- *  Each point contains, in addition to the standard Point information a list of processors that share
- * the points as well the key where this point can be found.
- * \param my_rank the rank of the current processor
- * \param n_proc is the number of processors
- * \param z_thres is the threshold value in the z direction.
- * \param comm The MPI communicator
- */
+//
+// * \brief Sent_receive_data: This function distributes a vector of type #PntsInfo class.
+// * Before the function each processor knows only the values of #Pnts[#my_rank],
+// * while after the execution of this function all the  #Pnts[0, ... #my_rank] are populated with values
+// * \param Pnts Is a vector of vectors of type PntsInfo<dim> with size equal to n_proc.
+// * This is the input and output of this function.
+// * As input only the #my_rank element has data, and the ohter elements are emput.
+// *  Each point contains, in addition to the standard Point information a list of processors that share
+// * the points as well the key where this point can be found.
+// * \param my_rank the rank of the current processor
+// * \param n_proc is the number of processors
+// * \param z_thres is the threshold value in the z direction.
+// * \param comm The MPI communicator
+
+/*
 template <int dim>
 void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
                           std::map<int , PntsInfo<dim> >& PointsMap,
@@ -411,6 +413,7 @@ void SendReceive_PntsInfo(std::vector< std::vector<PntsInfo<dim> > > &Pnts,
         }
     }
 }
+*/
 
 
 

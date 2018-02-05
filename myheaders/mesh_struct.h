@@ -453,16 +453,10 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 //if (my_rank == 0 && dbg_cnt >= 62 && it->first == 3 && it->second.dof == 189 )
                 //    std::cout<< "Made it here I " << std::endl;
 
-                // create a map of the points to add
-                std::map<int, int> connectedNodes;
+                // create a vector of the points conected with this one
+                std::vector<int> connectedNodes;
                 for (unsigned int i = 0; i < id_conn.size(); ++i){
-                    // The curr_cell_info[id_conn[i]].level corresponds to the level of the
-                    // cell we currently are. However each cell may consist of nodes of different levels
-                    // and in this list we should put the node level not the cell level
-                    // MAYBE WE NEED TO ADD A DUMMY LEVEL AND UPDATE DURING A LATER LOOP
-                    // IN ADDITION THE CONNECTED DOF IT MAY NOT BE PRESENT IN THE STRUCTURE YET
-
-                    connectedNodes.insert(std::pair<int, int >(curr_cell_info[id_conn[i]].dof, curr_cell_info[id_conn[i]].hang));
+                    connectedNodes.push_back(curr_cell_info[id_conn[i]].dof);
                 }
 
                 // create a vector of ints to hold the nodes that this node depends on if its constrained
@@ -510,23 +504,27 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
     if (n_proc > 1){
+        pcout << "exchange vertices between processors..." << std::endl << std::flush;
+
+
         // Each processor will make a list of the XY coordinates
         std::vector<std::vector<double> > Xcoords(n_proc);
         std::vector<std::vector<double> > Ycoords(n_proc);
         // and a list of the keys where the coordinates correspond
-        std::vector<std::vector<int> > key_map(n_proc);
+        //std::vector<std::vector<int> > key_map(n_proc);
         std::vector<int> n_points_per_proc(n_proc);
         typename std::map<int ,  PntsInfo<dim> >::iterator it, itf;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            key_map[my_rank].push_back(it->first);
+            //key_map[my_rank].push_back(it->first);
             Xcoords[my_rank].push_back(it->second.PNT[0]);
             if (dim == 3)
                 Ycoords[my_rank].push_back(it->second.PNT[1]);
 
         }
 
+
         Send_receive_size(static_cast<unsigned int>(Xcoords[my_rank].size()), n_proc, n_points_per_proc, mpi_communicator);
-        Sent_receive_data<int>(key_map, n_points_per_proc, my_rank, mpi_communicator, MPI_INT);
+        //Sent_receive_data<int>(key_map, n_points_per_proc, my_rank, mpi_communicator, MPI_INT);
         Sent_receive_data<double>(Xcoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
         if (dim == 3)
             Sent_receive_data<double>(Ycoords, n_points_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
@@ -534,10 +532,9 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
         // Each processor knows what xy points the other processor have
         // Lets suppose that I'm processor 0 and talk with the other processors
-        // -I'm processor 0 and I will loop though the points (XYcoords/Keys) that the other processors have sent me.
-        //  If I find any point in thoses lists I received from the other processors in my PointMap
-        //  I will flag it as shared and I'll add the id of the processor that I share the point with
-        //  I will keep the key that the processor has the point in his Point map
+        // -I'm processor 0 and I will loop though the points (XYcoords) that the other processors have sent me.
+        //  If I find any point in theses lists I received from the other processors in my PointMap
+        //  I will flag it as shared and I'll add the id of the processor that I share the point with.
         for (unsigned int i = 0; i < n_proc; ++i){
             if (i == my_rank)
                 continue;
@@ -552,93 +549,227 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     itf = PointsMap.find(id);
                     if (itf != PointsMap.end()){
                         itf->second.shared_proc.push_back(i);
-                        itf->second.key_val_shared_proc.push_back(key_map[i][j]);
+                        //itf->second.key_val_shared_proc.push_back(key_map[i][j]);
                     }
                 }
             }
         }
 
-
-
-
-        pcout << "exchange vertices between processors..." << std::endl << std::flush;
-        // All vertices have been added to the PointsMap structure.
-        // we loop through each vertex and store to a separate vector
-        // those that require communication and they are actively used
-
-        std::vector< std::vector<PntsInfo<dim> > > sharedPoints(n_proc);
-        // just for debuging check how many points will sent and how many not
-        int n_shared = 0; int n_not_shared = 0;
+        // Now that I know which XY points I share with the other processors I will make a list
+        // of the dofs that each of these points possess
+        std::vector<int> n_dofZ_per_proc(n_proc);
+        std::vector<std::vector<int> > dofZ(n_proc);
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
-            if (it->second.shared_proc.size() > 0){
-                // IN the old code I was checking for positive dofs.
-                // I have to see whether I should check that again
-                sharedPoints[my_rank].push_back(it->second);
-                n_shared++;
-            }else{
-                n_not_shared++;
+            if (it->second.shared_proc.size() > 0){// if this point is shared with other processors SEND:
+                dofZ[my_rank].push_back(it->second.shared_proc.size()); // ---- the number of processors that share the point
+                for (unsigned int k = 0; k < it->second.shared_proc.size(); ++k){
+                    dofZ[my_rank].push_back(it->second.shared_proc[k]);// ---- the processor id that needs this point
+                }
+                dofZ[my_rank].push_back(it->second.Zlist.size()); // ---- the number the dofs under the XY location
+                for (unsigned int j = 0; j < it->second.Zlist.size(); ++j){
+                    dofZ[my_rank].push_back(it->second.Zlist[j].dof); // ---- the dof itself
+                }
             }
         }
 
 
+        //print_size_msg<double>(Xcoords, my_rank);
+        //if (my_rank == 0){
+        //    for (unsigned int i = 0; i < dofZ[my_rank].size(); ++i)
+        //        std::cout << "-- " << dofZ[my_rank][i] << std::endl;
+        //}
+        //return;
 
-        std::cout << "I'm rank " << my_rank << " and I'll share " << n_shared << " and not share " << n_not_shared << std::endl;
-        MPI_Barrier(mpi_communicator);
+        //Exchange the dofs
+        Send_receive_size(static_cast<unsigned int>(dofZ[my_rank].size()), n_proc, n_dofZ_per_proc, mpi_communicator);
+        Sent_receive_data<int>(dofZ, n_dofZ_per_proc, my_rank, mpi_communicator, MPI_INT);
 
-        // -----------------Send those points to every processor------------
+        //print_size_msg<int>(dofZ, my_rank);
+        //return;
 
-        SendReceive_PntsInfo(sharedPoints, PointsMap, my_rank, n_proc, z_thres, mpi_communicator);
-        return;
-        std::cout << "Finish Send and Receive------------" << std::endl;
-
-
-        // Loop through the received points and get the ones my_rank should get
-        for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
-            if (i_proc == my_rank) continue;// my_rank already knows these poitns
-
-            for (unsigned int i = 0; i < sharedPoints[i_proc].size(); ++i){
-                // if my_rank is in the list of processors that should have this point I should get it
-                //https://stackoverflow.com/questions/571394/how-to-find-out-if-an-item-is-present-in-a-stdvector
-                if (std::find(sharedPoints[i_proc][i].shared_proc.begin(),sharedPoints[i_proc][i].shared_proc.end(),my_rank) != sharedPoints[i_proc][i].shared_proc.end()){
-                    int id = check_if_point_exists(sharedPoints[i_proc][i].PNT);
-                    if (id >= 0){
-                        it = PointsMap.find(id);
-                        std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
-                        for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
-                            if ( itz->dof >=0 ){
-                                it->second.add_Zcoord(*itz, z_thres);
-                            }
-                        }
-                    }else{
-                        std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
-                        PntIndices indices = add_new_point(sharedPoints[i_proc][i].PNT,*itz);
-                        itz++;
-                        it = PointsMap.find(indices.XYind);
-                        for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
-                            if ( itz->dof >=0 ){
-                                it->second.add_Zcoord(*itz, z_thres);
+        // Now I will loop though the dofs that the other processors have sent me
+        // If any of the other processor have told me that I share points with them
+        // I'll go though the dofs and pick the ones I dont have in my list and put them
+        // in a dof request vector
+        std::vector<std::vector<int> > Request_dof(n_proc);
+        std::map<int,int> unique_list_req_dofs;// Use this map to make sure we request the node only from one processor
+        for (unsigned int i = 0; i < n_proc; ++i){
+            if (i == my_rank)
+                continue;
+            std::vector<int> temp_dof_request;
+            unsigned int i_cnt = 0;
+            while(true){
+                int Nproc_share = get_v<int>(dofZ, i, i_cnt); i_cnt++;
+                bool isthisme = false;
+                for (int k = 0; k < Nproc_share; ++k){
+                    int iproc = get_v<int>(dofZ, i, i_cnt); i_cnt++;
+                    if (iproc == static_cast<int>(my_rank)){ // if the shared processor is me I should check which dofs I am missing
+                        isthisme = true;
+                    }
+                }
+                int Ndofs = get_v<int>(dofZ, i, i_cnt); i_cnt++;// Number of dofs in this key
+                for (int k = 0; k < Ndofs; ++k){
+                    int temp_dof = get_v<int>(dofZ, i, i_cnt); i_cnt++;
+                    if (isthisme){
+                        if (dof_ij.find(temp_dof) == dof_ij.end()){// if I dont have this in my list I'll request the info for it
+                            temp_dof_request.push_back(temp_dof);
+                            if (unique_list_req_dofs.find(temp_dof) == unique_list_req_dofs.end()){
+                                unique_list_req_dofs.insert(std::pair<int,int>(temp_dof, temp_dof));
                             }
                         }
                     }
                 }
-//                int id = check_if_point_exists(sharedPoints[i_proc][i].PNT);
-//                if (id >= 0){
-//                    it = PointsMap.find(id);
-//                    if (it == PointsMap.end())
-//                        std::cerr << "There must be an entry under this key" << std::endl;
-//                    else{
-//                        std::vector<Zinfo>::iterator itz = sharedPoints[i_proc][i].Zlist.begin();
-//                        for (; itz != sharedPoints[i_proc][i].Zlist.end(); ++itz){
-//                            if ( itz->dof >=0 ){
-//                                itz->used = true;
-//                                it->second.add_Zcoord(*itz, z_thres);
-//                            }
-//                        }
-//                    }
-//                }
+                if (i_cnt >= dofZ[i].size())
+                    break;
+            }
+            Request_dof[my_rank].push_back(i); // the processor we request the data from
+            Request_dof[my_rank].push_back(static_cast<int>(temp_dof_request.size())); //the total number number of dofs that we want from this processor
+            for (unsigned int k = 0; k < temp_dof_request.size(); ++k)
+                Request_dof[my_rank].push_back(temp_dof_request[k]);
+        }
+
+        //if (my_rank == 3){
+        //    for (unsigned int i = 0; i < Request_dof[my_rank].size(); ++i)
+        //        std::cout << "-- " << Request_dof[my_rank][i] << std::endl;
+        //}
+        //return;
+
+        // Sent out my requests
+        std::vector<int> n_request_per_proc(n_proc);
+        Send_receive_size(static_cast<unsigned int>(Request_dof[my_rank].size()), n_proc, n_request_per_proc, mpi_communicator);
+        Sent_receive_data<int>(Request_dof, n_request_per_proc, my_rank, mpi_communicator, MPI_INT);
+
+        //print_size_msg<int>(Request_dof, my_rank);
+        //return;
+
+        // Now I have to loop through the other processors requests.
+        // If I find that any processor needs data from me I'll pack the data into two
+        // serialized vectors of type int and double for the Zcoord
+
+        std::vector<std::vector<int>> int_data(n_proc);
+        std::vector<std::vector<double>> dbl_data(n_proc);
+        std::map<int, std::pair<int, int>>::iterator it_dof;
+        for (unsigned int i = 0; i < n_proc; ++i){
+            if (i == my_rank)
+                continue;
+
+            unsigned int i_cnt = 0;
+            int Ndofs_2_sent = 0;
+            std::vector<int> temp_int_data;
+            temp_int_data.clear();
+            while (true){
+                int proc2send = get_v<int>(Request_dof, i, i_cnt); i_cnt++;// This is the processor that should sent the data to i
+                int Ndofs_request = get_v<int>(Request_dof, i, i_cnt); i_cnt++;// This is how many data i has requested
+                for (int j = 0; j < Ndofs_request; ++j){
+                    int req_dof = get_v<int>(Request_dof, i, i_cnt); i_cnt++; // This is the requested dof
+                    if (proc2send == static_cast<int>(my_rank)){// If I am supposed to send this dof I have to pack its data as follows:
+                        it_dof = dof_ij.find(req_dof);
+                        if (it_dof != dof_ij.end()){
+                            Ndofs_2_sent++;
+                            Zinfo zinf = PointsMap[it_dof->second.first].Zlist[it_dof->second.second];
+                            if (zinf.dof == req_dof){
+                                temp_int_data.push_back(zinf.dof);                  // 1) The dof
+                                if (zinf.isTop == 1)                                // 2) a flag about the top/ bottom status of the dof
+                                    temp_int_data.push_back(1);
+                                else if (zinf.isBot == 1)
+                                    temp_int_data.push_back(2);
+                                else
+                                    temp_int_data.push_back(0);
+
+                                temp_int_data.push_back(static_cast<int>(zinf.dof_conn.size()));      // 3) The number of connections for this point
+                                for (unsigned int icn = 0; icn <  zinf.dof_conn.size(); ++icn){
+                                    temp_int_data.push_back(zinf.dof_conn[icn]);          // 4) The connected dofs
+                                }
+                                temp_int_data.push_back(static_cast<int>(zinf.cnstr_nds.size()));     // 5) The number of constraints for this point
+                                for (unsigned int jj = 0; jj < zinf.cnstr_nds.size(); ++jj){
+                                    temp_int_data.push_back(zinf.cnstr_nds[jj]);    // 6) The constraint dofs
+                                }
+
+                                // The coordinates
+                                dbl_data[my_rank].push_back(PointsMap[it_dof->second.first].PNT[0]);
+                                if (dim == 3)
+                                    dbl_data[my_rank].push_back(PointsMap[it_dof->second.first].PNT[1]);
+                                dbl_data[my_rank].push_back(zinf.z);                // ON a separate vector send the Zcoord
+
+                            }else{
+                                std::cerr << "There is a mismatch between dofs" << std::endl;
+                            }
+                        }
+                    }
+                }
+                if (i_cnt >= Request_dof[i].size()){
+                    break;
+                }
+            }
+
+            // for each processor we loop add the data
+            int_data[my_rank].push_back(static_cast<int>(i)); // The processor id that asked for the data
+            int_data[my_rank].push_back(Ndofs_2_sent); // The number of dofs nodes that this processor asked
+            for (unsigned int kk = 0; kk < temp_int_data.size(); ++kk)
+                int_data[my_rank].push_back(temp_int_data[kk]);
+        }
+
+
+
+        std::vector<int> n_ints_per_proc(n_proc);
+        std::vector<int> n_dbls_per_proc(n_proc);
+        Send_receive_size(static_cast<unsigned int>(int_data[my_rank].size()), n_proc, n_ints_per_proc, mpi_communicator);
+        Send_receive_size(static_cast<unsigned int>(dbl_data[my_rank].size()), n_proc, n_dbls_per_proc, mpi_communicator);
+        Sent_receive_data<int>(int_data, n_ints_per_proc, my_rank, mpi_communicator, MPI_INT);
+        Sent_receive_data<double>(dbl_data, n_dbls_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
+
+        //print_size_msg<int>(int_data, my_rank);
+        //print_size_msg<double>(dbl_data, my_rank);
+        //return;
+
+        // Finally I'll loop trhough the dofs that the porcessors have sent and pick the ones I had asked
+        for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
+            if (i_proc == my_rank)
+                continue;
+            unsigned int i_cnt = 0;
+            unsigned int d_cnt = 0;
+            while (true){
+                int proc_ask_data = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                int Ndofs = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+
+                for (int i = 0; i < Ndofs; ++i){
+                    int dof = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                    int top_flag = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                    int n_conn = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                    std::vector<int> conn;
+                    for (int j = 0; j < n_conn; ++j){
+                        conn.push_back(get_v<int>(int_data, i_proc, i_cnt)); i_cnt++;
+                    }
+                    int n_cnstr = get_v<int>(int_data, i_proc, i_cnt); i_cnt++;
+                    std::vector<int> cnstr;
+                    for (int j = 0; j < n_cnstr; ++j){
+                        cnstr.push_back(get_v<int>(int_data, i_proc, i_cnt)); i_cnt++;
+                    }
+
+                    double x = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
+                    double y = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
+                    double z = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
+
+                    if (proc_ask_data == static_cast<int>(my_rank)){// If I have asked for the dof, I'll add it to my points map
+                        int istop = 0;
+                        int isbot = 0;
+                        if (top_flag == 1)
+                            istop = 1;
+                        else if (top_flag == 2)
+                            isbot = 1;
+
+                        Zinfo newZ(z,dof,cnstr,istop,isbot,conn);
+                        Point<dim-1> ptemp;
+                        ptemp[0] = x;
+                        if (dim == 3)
+                            ptemp[1] = y;
+                        PntIndices pnt_ind = add_new_point(ptemp,newZ);
+                    }
+                }
+                if (i_cnt >= int_data[i_proc].size() || d_cnt >= dbl_data[i_proc].size())
+                    break;
             }
         }
-        MPI_Barrier(mpi_communicator);
     }//if (n_proc > 1)
 
     // IN the new code this may not needed. However it is needed for debuging
@@ -746,14 +877,14 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
 
 
              std::map<int, int >::iterator itt;
-             for (itt = itz->dof_conn.begin(); itt != itz->dof_conn.end(); ++itt){
+             for (unsigned int i = 0; i < itz->dof_conn.size(); ++i){
                  int a,b;
-                 if (itz->dof < itt->first){
+                 if (itz->dof < itz->dof_conn[i]){
                      a = itz->dof;
-                     b = itt->first;
+                     b = itz->dof_conn[i];
                  }
                  else{
-                     a = itt->first;
+                     a = itz->dof_conn[i];
                      b = itz->dof;
                  }
                  ret = line_map.insert(std::pair<std::pair<int,int>,int>(std::pair<int,int>(a,b),counter));

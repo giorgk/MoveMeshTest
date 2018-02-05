@@ -6,6 +6,7 @@
 #include <cmath>
 #include <map>
 #include <vector>
+#include <algorithm>
 
 
 template<class T>
@@ -30,11 +31,10 @@ public:
      * \param level is the level of the node
      * \param constr is true if its a hanging node
      */
-    Zinfo(double z, int dof, std::vector<int> cnstr_nodes, int istop, int isbot, std::map<int,int > dof_conn);
+    Zinfo(double z, int dof, std::vector<int> cnstr_nodes, int istop, int isbot, std::vector<int> dof_conn);
 
-    //! This is a map that holds the dofs of the triangulation points as key,
-    //! and the hanging flag as value for the points that this is connected with.
-    std::map<int,int > dof_conn;
+    //! This is a vector that holds the dofs of the triangulation points for the points that this is connected with.
+    std::vector<int> dof_conn;
 
     //! This is a vector that holds the constraint nodes
     std::vector<int> cnstr_nds;
@@ -52,7 +52,7 @@ public:
 
     //! Attempts to add connection to this point. If the connection already exists
     //! nothing is added
-    void Add_connections(std::map<int, int> conn);
+    void Add_connections(std::vector<int> conn);
 
     //! You should call this only after this point has at least z info and level assigned
     //! from a previous iteration.
@@ -107,10 +107,17 @@ public:
     //! This is the index of the #dof_bot node in the list of the #PntsInfo::Zlist
     int id_bot;
 
+    //! A boolean flag that is true if the node lays on the top surface of the mesh
+    int isTop;
+
+    //! A boolean flag that is true if the node lays on the bottom of the mesh
+    int isBot;
+
     //! A flag that is set to true if this node is connected with the node above
     //! If this is a hanging node then one of the #connected_above or #connected_below
     //! must be false and the other true
     bool connected_above;
+
 
     //! A flag that is set to true if this node is connected with the node below
     //! If this is a hanging node then one of the #connected_above or #connected_below
@@ -121,14 +128,9 @@ public:
     //! If it is true you can use this node to calculate the elevation of another node that depends on this one.
     bool isZset;
 
-    //! A boolean flag that is true if the node lays on the top surface of the mesh
-    int isTop;
-
-    //! A boolean flag that is true if the node lays on the bottom of the mesh
-    int isBot;
 };
 
-Zinfo::Zinfo(double z_in, int dof_in, std::vector<int> cnstr_nodes, int istop, int isbot,  std::map<int,int> conn){
+Zinfo::Zinfo(double z_in, int dof_in, std::vector<int> cnstr_nodes, int istop, int isbot,  std::vector<int> conn){
     // To construct a new point we need to know the elevation,
     // the dof, the level and whether is a hanging node.
     // Although the ids should not be negative we allow to create Zinfo points with negative ids
@@ -177,10 +179,13 @@ void Zinfo::update_main_info(Zinfo newZ){
     add_constraint_nodes(newZ.cnstr_nds);
 }
 
-void Zinfo::Add_connections(std::map<int, int > conn){
-    std::map<int, int>::iterator it;
-    for (it = conn.begin(); it != conn.end(); ++it)
-        dof_conn.insert(std::pair<int, int>(it->first, it->second));
+void Zinfo::Add_connections(std::vector<int> conn){
+    std::vector<int>::iterator it;
+    for (it = conn.begin(); it != conn.end(); ++it){
+        if (std::find(dof_conn.begin(),dof_conn.end(), *it) == dof_conn.end()){
+            dof_conn.push_back(*it);
+        }
+    }
 }
 
 
@@ -204,7 +209,7 @@ bool Zinfo::compare(double z_in, double thres){
 //}
 
 bool Zinfo::connected_with(int dof_in){
-    return dof_conn.count(dof_in) > 0;
+    return std::find(dof_conn.begin(), dof_conn.end(), dof_in) != dof_conn.end();
 }
 
 void Zinfo::reset(){
