@@ -163,7 +163,7 @@ void mm_test<dim>::run(){
                                  pcout,
                                  "iter0");
 
-    return;
+    //return;
 
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
@@ -297,7 +297,7 @@ void mm_test<dim>::run(){
         refine_transfer("refine" + std::to_string(i+1));
 
         //return;
-        if (i == 6)
+        if (i == 8)
             return;
 
 

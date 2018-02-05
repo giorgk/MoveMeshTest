@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <deal.II/base/point.h>
+#include <deal.II/lac/sparsity_tools.h>
 
 #include "zinfo.h"
 

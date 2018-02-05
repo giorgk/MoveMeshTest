@@ -249,7 +249,7 @@ void Zinfo::add_constraint_nodes(std::vector<int> cnstr_nodes){
             cnstr_nds.push_back(cnstr_nodes[i]);
         }
     }
-    hanging = static_cast<int>(cnstr_nodes.size() > 0);
+    hanging = static_cast<int>(cnstr_nds.size() > 0);
 }
 
 #endif // ZINFO_H

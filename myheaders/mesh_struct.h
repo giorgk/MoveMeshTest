@@ -343,6 +343,16 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     DoFTools::make_hanging_node_constraints(mesh_dof_handler, mesh_constraints);
     mesh_constraints.close();
 
+//    DynamicSparsityPattern mesh_dsp (mesh_locally_relevant);
+//    DoFTools::make_sparsity_pattern (mesh_dof_handler, mesh_dsp,
+//                                         mesh_constraints, true);
+//    SparsityTools::distribute_sparsity_pattern (mesh_dsp,
+//                                                mesh_dof_handler.n_locally_owned_dofs_per_processor(),
+//                                                mpi_communicator,
+//                                                mesh_locally_relevant);
+
+
+
     // to avoid duplicate executions we will maintain a map with the dofs that have been
     // already processed
     std::map<int,int> dof_local;// the key are the dof and the value is the _counter
@@ -444,6 +454,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
             typename std::map<int, trianode<dim> >::iterator it;
             for (it = curr_cell_info.begin(); it != curr_cell_info.end(); ++it){
+                //if (!distributed_mesh_vertices.in_local_range(it->second.dof))
+                //    continue;
                 //if (my_rank == 0 && dbg_cnt >= 62){
                 //    std::cout  << "a: " << it->first << ", " << it->second.dof << std::endl;
                 //}
@@ -487,6 +499,47 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     MPI_Barrier(mpi_communicator);
     make_dof_ij_map();
 
+    if (n_proc > 1){
+        std::map<int,std::pair<int,int> >::iterator it_dof;
+        // loop through the ghost cells and add the connections to the nodes
+        cell = mesh_dof_handler.begin_active(),
+        endc = mesh_dof_handler.end();
+        for (; cell != endc; ++cell){
+            if (cell->is_ghost()){
+                fe_mesh_points.reinit(cell);
+                cell->get_dof_indices (cell_dof_indices);
+                std::map<int, int > curr_cell_idof_dof;
+                for (unsigned int idof = 0; idof < mesh_fe.base_element(0).dofs_per_cell; ++idof){
+                    std::vector<int> current_dofs(dim);
+                    for (unsigned int dir = 0; dir < dim; ++dir){
+                        unsigned int support_point_index = mesh_fe.component_to_system_index(dir, idof );
+                        current_dofs[dir] = static_cast<int>(cell_dof_indices[support_point_index]);
+                    }
+                    curr_cell_idof_dof[idof] = current_dofs[dim-1]; // a map idof - dof
+                }
+                std::map<int,int>::iterator itt;
+                for (itt = curr_cell_idof_dof.begin(); itt != curr_cell_idof_dof.end(); ++itt){
+                    it_dof = dof_ij.find(itt->second);
+                    if (it_dof != dof_ij.end()){
+                        std::vector<int> id_conn = get_connected_indices<dim>(itt->first);
+                        std::vector<int> connectedNodes;
+                        for (unsigned int i = 0; i < id_conn.size(); ++i){
+                            connectedNodes.push_back(curr_cell_idof_dof[id_conn[i]]);
+                        }
+                        PointsMap[it_dof->second.first].Zlist[it_dof->second.second].Add_connections(connectedNodes);
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
+
+
+
+
     //Outlines[my_rank].PrintPolygons(my_rank);
     //if (my_rank == 0){
     //    std::vector<int> ints;
@@ -522,6 +575,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
         }
 
+        std::cout << "Rank "  << my_rank << " will send " << Xcoords[my_rank].size() << " XY points" << std::endl;
 
         Send_receive_size(static_cast<unsigned int>(Xcoords[my_rank].size()), n_proc, n_points_per_proc, mpi_communicator);
         //Sent_receive_data<int>(key_map, n_points_per_proc, my_rank, mpi_communicator, MPI_INT);
@@ -581,6 +635,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         //return;
 
         //Exchange the dofs
+        std::cout << "Rank "  << my_rank << " will send " << dofZ[my_rank].size() << " Dofs" << std::endl;
         Send_receive_size(static_cast<unsigned int>(dofZ[my_rank].size()), n_proc, n_dofZ_per_proc, mpi_communicator);
         Sent_receive_data<int>(dofZ, n_dofZ_per_proc, my_rank, mpi_communicator, MPI_INT);
 
@@ -612,8 +667,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     int temp_dof = get_v<int>(dofZ, i, i_cnt); i_cnt++;
                     if (isthisme){
                         if (dof_ij.find(temp_dof) == dof_ij.end()){// if I dont have this in my list I'll request the info for it
-                            temp_dof_request.push_back(temp_dof);
                             if (unique_list_req_dofs.find(temp_dof) == unique_list_req_dofs.end()){
+                                temp_dof_request.push_back(temp_dof);
                                 unique_list_req_dofs.insert(std::pair<int,int>(temp_dof, temp_dof));
                             }
                         }
@@ -635,6 +690,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         //return;
 
         // Sent out my requests
+        std::cout << "Rank "  << my_rank << " and I have " << Request_dof[my_rank].size() << " Requests" << std::endl;
         std::vector<int> n_request_per_proc(n_proc);
         Send_receive_size(static_cast<unsigned int>(Request_dof[my_rank].size()), n_proc, n_request_per_proc, mpi_communicator);
         Sent_receive_data<int>(Request_dof, n_request_per_proc, my_rank, mpi_communicator, MPI_INT);
@@ -710,7 +766,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         }
 
 
-
+        std::cout << "Rank "  << my_rank << " and I will send " << int_data[my_rank].size() << " integers and " << dbl_data[my_rank].size() << " doubles"  << std::endl;
         std::vector<int> n_ints_per_proc(n_proc);
         std::vector<int> n_dbls_per_proc(n_proc);
         Send_receive_size(static_cast<unsigned int>(int_data[my_rank].size()), n_proc, n_ints_per_proc, mpi_communicator);
