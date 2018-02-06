@@ -149,7 +149,7 @@ void mm_test<dim>::refine_transfer(std::string prefix){
 
 template <int dim>
 void mm_test<dim>::run(){
-    //unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
+    unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
     // after we generated the mesh we update the custom Mesh structure
     mesh_struct.updateMeshStruct(mesh_dof_handler,
@@ -162,6 +162,7 @@ void mm_test<dim>::run(){
                                  mpi_communicator,
                                  pcout,
                                  "iter0");
+    mesh_struct.printMesh("animBefore_0", my_rank,mesh_dof_handler);
 
     //return;
 
@@ -209,6 +210,7 @@ void mm_test<dim>::run(){
                                     "iter0");
 
 
+    mesh_struct.printMesh("animAfter_0", my_rank,mesh_dof_handler);
     //return;
 
 
@@ -227,7 +229,7 @@ void mm_test<dim>::run(){
     }
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
     refine_transfer("refine0");
-
+    mesh_struct.printMesh("animBefore_1", my_rank,mesh_dof_handler);
     //return;
 
     // Then we need to update the custon mesh structure after any change of the triangulation
@@ -274,6 +276,7 @@ void mm_test<dim>::run(){
                                     distributed_mesh_vertices,
                                     mpi_communicator,
                                     pcout,"iter1");
+    mesh_struct.printMesh("animAfter_1", my_rank,mesh_dof_handler);
     //return;
 
 
@@ -295,7 +298,7 @@ void mm_test<dim>::run(){
         }
         // The refine transfer refines and updates the triangulation and mesh_dof_handler
         refine_transfer("refine" + std::to_string(i+1));
-
+        mesh_struct.printMesh("animBefore_" + std::to_string(i+2) , my_rank, mesh_dof_handler);
         //return;
         if (i == 8)
             return;
@@ -330,6 +333,8 @@ void mm_test<dim>::run(){
                                         mpi_communicator,
                                         pcout, "iter" + std::to_string(i+2));
 
+        mesh_struct.printMesh("animAfter_" + std::to_string(i+2) , my_rank, mesh_dof_handler);
+
 
     }
 
@@ -343,13 +348,13 @@ int main (int argc, char **argv){
     deallog.depth_console (1);
 
     //srand (time(NULL));
-    //int rr = time(NULL);
-    //std::cout << rr << std::endl;
-    srand(1517505046);
-    //srand(rr);
+    int rr = time(NULL);
+    std::cout << rr << std::endl;
+    //srand(1517505046);
+    srand(rr);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
-    mm_test<3> mm;
+    mm_test<2> mm;
     mm.run();
 
 

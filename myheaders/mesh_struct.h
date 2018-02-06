@@ -196,6 +196,7 @@ public:
                        unsigned int my_rank,
                        std::string prefix);
 
+    void printMesh(std::string filename, unsigned int i_proc, DoFHandler<dim>& mesh_dof_handler);
 private:
     void dbg_meshStructInfo2D(std::string filename, unsigned int n_proc);
     void dbg_meshStructInfo3D(std::string filename, unsigned int n_proc);
@@ -802,9 +803,12 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                         cnstr.push_back(get_v<int>(int_data, i_proc, i_cnt)); i_cnt++;
                     }
 
-                    double x = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
-                    double y = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
-                    double z = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
+                    double x, y, z;
+                    x = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
+                    if (dim == 3){
+                        y = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
+                    }
+                    z = get_v<double>(dbl_data, i_proc, d_cnt); d_cnt++;
 
                     if (proc_ask_data == static_cast<int>(my_rank)){// If I have asked for the dof, I'll add it to my points map
                         int istop = 0;
@@ -1394,6 +1398,44 @@ void Mesh_struct<dim>::move_vertices(DoFHandler<dim>& mesh_dof_handler,
                     }
                     if (dir == 2 && dim == 3)
                         y = v(dir)/dbg_scale_z;
+                }
+                mesh_file << x << ", " << y << ", " << z << ", ";
+            }
+            mesh_file << std::endl;
+        }
+    }
+    mesh_file.close();
+}
+
+template<int dim>
+void Mesh_struct<dim>::printMesh(std::string filename, unsigned int i_proc, DoFHandler<dim>& mesh_dof_handler){
+    const std::string mesh_file_name = ("mesh_Print" + filename + "_" +
+                                        Utilities::int_to_string(i_proc+1, 4) +
+                                        ".dat");
+    std::ofstream mesh_file;
+    mesh_file.open((mesh_file_name.c_str()));
+
+    typename DoFHandler<dim>::active_cell_iterator
+    cell = mesh_dof_handler.begin_active(),
+    endc = mesh_dof_handler.end();
+    double x, y, z;
+    for (; cell != endc; ++cell){
+        if (cell->is_locally_owned()){
+            for (unsigned int vertex_no = 0; vertex_no < GeometryInfo<dim>::vertices_per_cell; ++vertex_no){
+                Point<dim> v=cell->vertex(vertex_no);
+                for (unsigned int dir=0; dir < dim; ++dir){
+                    if (dir == 0)
+                        x = v(dir)/dbg_scale_x;
+                    if (dir == 1 && dim == 2){
+                        y = v(dir)/dbg_scale_z;
+                        z = 0;
+                    }
+                    if (dir == 1 && dim == 3){
+                         z = v(dir)/dbg_scale_x;
+                    }
+                    if (dir == 2 && dim == 3){
+                        y = v(dir)/dbg_scale_z;
+                    }
                 }
                 mesh_file << x << ", " << y << ", " << z << ", ";
             }
