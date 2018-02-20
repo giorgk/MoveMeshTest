@@ -83,11 +83,11 @@ void mm_test<dim>::make_grid(){
     Point<dim> right_top;
     std::vector<unsigned int>	n_cells;
     if (dim == 2) {
-        right_top[0] = 5000; right_top[1] = 300;
+        right_top[0] = 5000; right_top[1] = 100;
         n_cells.push_back(20); n_cells.push_back(5);
     }
     else if (dim == 3){
-        right_top[0] = 5000; right_top[1] = 5000; right_top[2] = 300;
+        right_top[0] = 5000; right_top[1] = 5000; right_top[2] = 100;
         n_cells.push_back(10); n_cells.push_back(10); n_cells.push_back(3);
     }
 
@@ -96,6 +96,7 @@ void mm_test<dim>::make_grid(){
                                                       left_bottom,
                                                       right_top,
                                                       true);
+
 }
 
 template <int dim>
@@ -162,9 +163,9 @@ void mm_test<dim>::run(){
                                  mpi_communicator,
                                  pcout,
                                  "iter0");
-    mesh_struct.printMesh("animBefore_0", my_rank,mesh_dof_handler);
+    //mesh_struct.printMesh("animBefore_0", my_rank,mesh_dof_handler);
 
-    //return;
+    return;
 
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
@@ -334,8 +335,6 @@ void mm_test<dim>::run(){
                                         pcout, "iter" + std::to_string(i+2));
 
         mesh_struct.printMesh("animAfter_" + std::to_string(i+2) , my_rank, mesh_dof_handler);
-
-
     }
 
 
@@ -348,12 +347,13 @@ int main (int argc, char **argv){
     deallog.depth_console (1);
 
     //srand (time(NULL));
-    int rr = time(NULL);
-    std::cout << rr << std::endl;
-    //srand(1517505046);
-    srand(rr);
+    //int rr = time(NULL);
+    //std::cout << rr << std::endl;
+    srand(1517505046);
+    //srand(rr);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
+    //This is going to create a box with uniform bottom at 0 and uniform top 100
     mm_test<2> mm;
     mm.run();
 

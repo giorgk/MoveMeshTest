@@ -30,6 +30,7 @@ struct trianode {
     std::map<int,int> c_pnt;// dofs of points connected to that node
     int isTop;
     int isBot;
+    bool islocal;
     std::vector<types::global_dof_index> cnstr_nd;
 };
 
@@ -202,6 +203,10 @@ private:
     void dbg_meshStructInfo3D(std::string filename, unsigned int n_proc);
     double dbg_scale_x;
     double dbg_scale_z;
+
+    void identify_local_connections();
+    void identify_dependencies();
+
 };
 
 template <int dim>
@@ -210,7 +215,7 @@ Mesh_struct<dim>::Mesh_struct(double xy_thr, double z_thr){
     z_thres = z_thr;
     _counter = 0;
     dbg_scale_x = 100;
-    dbg_scale_z = 20;
+    dbg_scale_z = 10;
 }
 
 template <int dim>
@@ -344,16 +349,6 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     DoFTools::make_hanging_node_constraints(mesh_dof_handler, mesh_constraints);
     mesh_constraints.close();
 
-//    DynamicSparsityPattern mesh_dsp (mesh_locally_relevant);
-//    DoFTools::make_sparsity_pattern (mesh_dof_handler, mesh_dsp,
-//                                         mesh_constraints, true);
-//    SparsityTools::distribute_sparsity_pattern (mesh_dsp,
-//                                                mesh_dof_handler.n_locally_owned_dofs_per_processor(),
-//                                                mpi_communicator,
-//                                                mesh_locally_relevant);
-
-
-
     // to avoid duplicate executions we will maintain a map with the dofs that have been
     // already processed
     std::map<int,int> dof_local;// the key are the dof and the value is the _counter
@@ -367,13 +362,12 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     pcout << "Update XYZ structure...for: " << prefix  << std::endl << std::flush;
     std::vector<unsigned int> cell_dof_indices (mesh_fe.dofs_per_cell);
     typename DoFHandler<dim>::active_cell_iterator
-        cell = mesh_dof_handler.begin_active(),
-        endc = mesh_dof_handler.end();
-    //std::cout << "Rank: " << my_rank << " MADE IT to 00000 for " << prefix << std::endl;
+    cell = mesh_dof_handler.begin_active(),
+    endc = mesh_dof_handler.end();
     MPI_Barrier(mpi_communicator);
     //int dbg_cnt =0;
     for (; cell != endc; ++cell){
-        if (cell->is_locally_owned()){
+        if (cell->is_locally_owned() || cell->is_ghost()){
             bool top_cell = false;
             bool bot_cell = false;
 
@@ -392,7 +386,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             fe_mesh_points.reinit(cell);
             cell->get_dof_indices (cell_dof_indices);
             // First we will loop through the cell dofs gathering all info we need for the points
-            // and then we will loop again though the points to add the into the structure.
+            // and then we will loop again though the points to add them into the structure.
             // Therefore we would need to initialize several vectors
             std::map<int, trianode<dim> > curr_cell_info;
 
@@ -417,8 +411,11 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     current_node[dir] = fe_mesh_points.quadrature_point(idof)[dir];
                     distributed_mesh_vertices[cell_dof_indices[support_point_index]] = current_node[dir];
 
-                    //pcout << "dir:" << dir << ", idof:" << idof << ", cur_dof:" << current_dofs[dir]
-                    //      <<   ", cur_nd:" << current_node[dir] << ", spi:" << support_point_index << std::endl;
+                    //if (!distributed_mesh_vertices.in_local_range(cell_dof_indices[support_point_index]) && my_rank == 0){
+                    //    pcout << "dir:" << dir << ", idof:" << idof << ", cur_dof:" << current_dofs[dir]
+                    //          <<   ", cur_nd:" << current_node[dir] << ", spi:" << support_point_index << std::endl;
+                    //}
+
                 }
                 trianode<dim> temp;
                 temp.pnt = current_node;
@@ -429,6 +426,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 //if (current_dofs[dim-1] == 519)
                 //    std::cout <<"@@@@@@@@@@@@@@@@@@@@@@@@ " << temp.cnstr_nd.size() << "##################" << std::endl;
                 temp.spi = spi[dim-1];
+                temp.islocal = distributed_mesh_vertices.in_local_range(temp.dof);
                 temp.isBot = 0;
                 temp.isTop = 0;
                 if (bot_cell){
@@ -480,6 +478,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
                 // Now create a zinfo variable
                 Zinfo zinfo(it->second.pnt[dim-1], it->second.dof, temp_cnstr, it->second.isTop, it->second.isBot, connectedNodes);
+                zinfo.is_local = it->second.islocal;
 
                 // and a point
                 Point<dim-1> ptemp;
@@ -496,9 +495,90 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         }
     }
 
-    //std::cout << "Rank: " << my_rank << " MADE IT to AA for " << prefix << std::endl;
-    MPI_Barrier(mpi_communicator);
     make_dof_ij_map();
+    set_id_above_below();
+    MPI_Barrier(mpi_communicator);
+
+    dbg_meshStructInfo3D("beforeGhost_" + prefix + "_", my_rank);
+
+
+    {// Find which nodes that they are in local range have top that they are not in local range
+        typename std::map<int ,  PntsInfo<dim> >::iterator it;
+        std::map<int,std::pair<int,int> >::iterator it_dof;
+        std::vector<std::vector<int> > dofTOP(n_proc);
+        std::vector<int> dofnode;
+        std::vector<int> n_dofTop_per_proc(n_proc);
+
+        while (true){
+            int count_not_found = 0;
+            for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+                std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+                for (; itz != it->second.Zlist.end(); ++itz){
+                    if (distributed_mesh_vertices.in_local_range(itz->dof)){
+                        if (itz->Top_z < 0){
+                            if (distributed_mesh_vertices.in_local_range(itz->dof_top)){
+                                itz->Top_z = it->second.Zlist[itz->id_bot].z;
+                            }
+                            else{
+                                dofTOP[my_rank].push_back(itz->dof_top);
+                                dofnode.push_back(itz->dof);
+                                count_not_found++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Send_receive_size(static_cast<unsigned int>(dofTOP[my_rank].size()), n_proc, n_dofTop_per_proc, mpi_communicator);
+            Sent_receive_data<int>(dofTOP, n_dofTop_per_proc, my_rank, mpi_communicator, MPI_INT);
+
+            std::vector<int> n_newTop_per_proc(n_proc);
+            std::vector<std::vector<int>>new_top_dof(n_proc);
+            std::vector<std::vector<double>> new_top_z(n_proc);
+            std::vector<std::vector<int>> proc_ask(n_proc);
+            std::vector<std::vector<int>> i_ask(n_proc);
+
+            for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
+                if (i_proc == my_rank)
+                    continue;
+                for (unsigned int i = 0; dofTOP[i_proc].size(); ++i){
+                    it_dof = dof_ij.find(dofTOP[i_proc][i]);
+                    if (distributed_mesh_vertices.in_local_range(PointsMap[it_dof->second.first].Zlist[it_dof->second.second].dof)){
+                        new_top_dof[my_rank].push_back(PointsMap[it_dof->second.first].Zlist[it_dof->second.second].dof_top);
+                        proc_ask[my_rank].push_back(i_proc);
+                        i_ask[my_rank].push_back(i);
+                        new_top_z[my_rank].push_back(PointsMap[it_dof->second.first].Zlist[it_dof->second.second].Top_z);
+                    }
+                }
+            }
+
+            Send_receive_size(static_cast<unsigned int>(new_top_dof[my_rank].size()), n_proc, n_newTop_per_proc, mpi_communicator);
+            Sent_receive_data<int>(new_top_dof, n_newTop_per_proc, my_rank, mpi_communicator, MPI_INT);
+            Sent_receive_data<int>(proc_ask, n_newTop_per_proc, my_rank, mpi_communicator, MPI_INT);
+            Sent_receive_data<int>(i_ask, n_newTop_per_proc, my_rank, mpi_communicator, MPI_INT);
+            Sent_receive_data<double>(new_top_z, n_newTop_per_proc, my_rank, mpi_communicator, MPI_DOUBLE);
+
+            for (unsigned int i_proc = 0; i_proc < n_proc; ++i_proc){
+                if (i_proc == my_rank)
+                    continue;
+                for (unsigned int i = 0; i < proc_ask[i_proc].size(); ++i){
+                    if (proc_ask[i_proc][i] == my_rank){
+                       it_dof = dof_ij.find(dofnode[i_ask[i_proc][i]]);
+                       PointsMap[it_dof->second.first].Zlist[it_dof->second.second].dof_top = new_top_dof[i_proc][i];
+                       PointsMap[it_dof->second.first].Zlist[it_dof->second.second].Top_z = new_top_z[i_proc][i];
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
+
+
+    return;
+    //std::cout << "Rank: " << my_rank << " MADE IT to AA for " << prefix << std::endl;
 
     if (n_proc > 1){
         std::map<int,std::pair<int,int> >::iterator it_dof;
@@ -539,22 +619,13 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
 
 
 
-
-
-    //Outlines[my_rank].PrintPolygons(my_rank);
-    //if (my_rank == 0){
-    //    std::vector<int> ints;
-    //    std::vector<double> dbls;
-    //    Outlines[my_rank].serialize();
-    //}
-
-
     MPI_Barrier(mpi_communicator);
     distributed_mesh_vertices.compress(VectorOperation::insert);
     MPI_Barrier(mpi_communicator);
 
     //dbg_meshStructInfo2D("before2D", my_rank);
     dbg_meshStructInfo3D("before3D_Struct_" + prefix + "_", my_rank);
+
 
 
     if (n_proc > 1){
@@ -920,16 +991,19 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
                       << std::setw(15) << y << ", "
                       << std::setw(15) << z << ", "
                       << std::setw(15) << itz->dof << ", "
-                      << std::setw(15) << itz->dof_conn.size() << ", "
-                      << std::setw(15) << itz->cnstr_nds.size() << ", "
-                      << std::setw(15) << itz->isTop << ", "
-                      << std::setw(15) << itz->isBot << ", "
+                      << std::setw(15) << itz->is_local << ", "
                       << std::setw(15) << itz->dof_above  << ", "
                       << std::setw(15) << itz->dof_below << ", "
                       << std::setw(15) << itz->dof_top  << ", "
                       << std::setw(15) << itz->dof_bot << ", "
-                      << std::setw(15) << itz->rel_pos  << ", "
+                      << std::setw(15) << itz->Top_z  << ", "
+                      << std::setw(15) << itz->Bot_z << ", "
+                      << std::setw(15) << itz->isTop << ", "
+                      << std::setw(15) << itz->isBot << ", "
+                      << std::setw(15) << itz->dof_conn.size() << ", "
+                      << std::setw(15) << itz->cnstr_nds.size() << ", "
                       << std::setw(15) << itz->hanging << ", "
+                      << std::setw(15) << itz->rel_pos  << ", "
                       << std::setw(15) << it->second.T << ", "
                       << std::setw(15) << it->second.B << ", "
                       << std::setw(5) << it->second.have_to_send
@@ -1482,6 +1556,25 @@ void Mesh_struct<dim>::compute_initial_elevations(MyFunction<dim, dim-1> top_fun
         double bot = bot_function.value(it->second.PNT);
         it->T = top;
         it->B = bot;
+    }
+}
+
+template <int dim>
+void Mesh_struct<dim>::identify_local_connections(){
+    typename std::map<int , PntsInfo<dim> >::iterator it;
+    for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+        it->second.set_local_above_below();
+    }
+}
+
+template <int dim>
+void Mesh_struct<dim>::identify_dependencies(){
+    typename std::map<int , PntsInfo<dim> >::iterator it;
+    for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+        std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+        for (; itz != it->second.Zlist.end(); ++itz){
+            //it->second.
+        }
     }
 }
 

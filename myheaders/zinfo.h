@@ -98,11 +98,15 @@ public:
     //! The dof of the node that serves as top for this node
     int dof_top;
 
+    double Top_z;
+
     //! This is the index of the #dof_top node in the list of the #PntsInfo::Zlist
     int id_top;
 
     //! The dof of the node that serves as bottom for this node
     int dof_bot;
+
+    double Bot_z;
 
     //! This is the index of the #dof_bot node in the list of the #PntsInfo::Zlist
     int id_bot;
@@ -127,6 +131,8 @@ public:
     //! This is a flag that is true if the elevetion of this node has been updated at a certain iteration
     //! If it is true you can use this node to calculate the elevation of another node that depends on this one.
     bool isZset;
+
+    bool is_local;
 
 };
 
@@ -159,6 +165,9 @@ Zinfo::Zinfo(double z_in, int dof_in, std::vector<int> cnstr_nodes, int istop, i
     connected_above = false;
     connected_below = false;
     isZset = false;
+    is_local = false;
+    Bot_z = -999.0;
+    Top_z = -999.0;
 
 
     Add_connections(conn);
