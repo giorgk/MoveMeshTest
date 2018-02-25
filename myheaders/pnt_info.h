@@ -96,9 +96,7 @@ public:
      * Once the ids above/below and the connections between the nodes have been established we loop twice to find which id is top and bottom for each node
      * The index 0 node has always itself its #Zinfo::id_bot, while the last index has itsef as its Zinfo::id_top.
     */
-    void set_ids_above_below();
-    void set_ids_above_below1();
-    void set_local_above_below();
+    void set_ids_above_below(int my_rank);
 
     bool isEmpty;
 
@@ -187,7 +185,7 @@ int PntsInfo<dim>::number_of_positive_dofs(){
 }
 
 template <int dim>
-void PntsInfo<dim>::set_ids_above_below(){
+void PntsInfo<dim>::set_ids_above_below(int my_rank){
     /*    a ---------       b   ---------
      *      |   |   |           |       |
      *      |-------|           |       |
@@ -206,16 +204,24 @@ void PntsInfo<dim>::set_ids_above_below(){
             // If this is the first node from the bottom
             Zlist[i].dof_above = Zlist[i+1].dof;
             Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].dof_above);
-            Zlist[i].dof_bot = Zlist[i].dof;
-            Zlist[i].id_bot = i;
+            Zlist[i].Bot.dof = Zlist[i].dof;
+            Zlist[i].Bot.id = i;
+            if (Zlist[i].is_local){
+                Zlist[i].Bot.z = Zlist[i].z;
+                Zlist[i].Bot.proc = my_rank;
+            }
             //Zlist[i].Bot_z = Zlist[i].z;
 
         }else if(i==Zlist.size()-1){//======================================
             //this is the top node on this list
             Zlist[i].dof_below = Zlist[i-1].dof;
             Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].dof_below);
-            Zlist[i].dof_top = Zlist[i].dof;
-            Zlist[i].id_top = i;
+            Zlist[i].Top.dof = Zlist[i].dof;
+            Zlist[i].Top.id = i;
+            if (Zlist[i].is_local){
+                Zlist[i].Top.z = Zlist[i].z;
+                Zlist[i].Top.proc = my_rank;
+            }
             //Zlist[i].Top_z = Zlist[i].z;
 
         }else{
@@ -228,39 +234,48 @@ void PntsInfo<dim>::set_ids_above_below(){
     //=======================================
     int cur_dof_bot =Zlist[0].dof;
     int cur_id_bot = 0;
-    double cur_z_bot = Zlist[0].z;
     for (int i = 1; i < Zlist.size(); ++i){
         if (Zlist[i].connected_below){
-            Zlist[i].dof_bot = cur_dof_bot;
-            Zlist[i].id_bot = cur_id_bot;
+            Zlist[i].Bot.dof = cur_dof_bot;
+            Zlist[i].Bot.id = cur_id_bot;
+            if (Zlist[cur_id_bot].is_local){
+                Zlist[i].Bot.z = Zlist[cur_id_bot].z;
+                Zlist[i].Bot.proc = my_rank;
+            }
             //Zlist[i].Bot_z = cur_z_bot;
         }else{
-            Zlist[i].dof_bot = Zlist[i].dof;
-            Zlist[i].id_bot = i;
-            Zlist[i].Bot_z = Zlist[i].z;
+            Zlist[i].Bot.dof = Zlist[i].dof;
+            Zlist[i].Bot.id = i;
+            if (Zlist[i].is_local){
+                Zlist[i].Bot.z = Zlist[i].z;
+                Zlist[i].Bot.proc = my_rank;
+            }
             cur_dof_bot = Zlist[i].dof;
             cur_id_bot = i;
-            //cur_z_bot = Zlist[i].z;
         }
     }
 
     int cur_dof_top =Zlist[Zlist.size()-1].dof;
     int cur_id_top = Zlist.size()-1;
-    double cur_z_top = Zlist[Zlist.size()-1].z;
     for (int i = Zlist.size() - 2; i >=0; --i){// When we loop with --i unsigned int causes errors if i gets below 0
         //std::cout << i << std::endl;
         if (Zlist[i].connected_above){
-            Zlist[i].dof_top = cur_dof_top;
-            Zlist[i].id_top = cur_id_top;
-            //Zlist[i].Top_z = cur_z_top;
+            Zlist[i].Top.dof = cur_dof_top;
+            Zlist[i].Top.id = cur_id_top;
+            if (Zlist[cur_id_top].is_local){
+                Zlist[i].Top.z = Zlist[cur_id_top].z;
+                Zlist[i].Top.proc = my_rank;
+            }
         }
         else{
-            Zlist[i].dof_top = Zlist[i].dof;
-            Zlist[i].id_top = i;
-            Zlist[i].Top_z = Zlist[i].z;
+            Zlist[i].Top.dof = Zlist[i].dof;
+            Zlist[i].Top.id = i;
+            if (Zlist[i].is_local){
+                Zlist[i].Top.z = Zlist[i].z;
+                Zlist[i].Top.proc = my_rank;
+            }
             cur_dof_top = Zlist[i].dof;
             cur_id_top = i;
-            //cur_z_top = Zlist[i].z;
         }
     }
 
@@ -269,58 +284,6 @@ void PntsInfo<dim>::set_ids_above_below(){
     //    Zlist[i].rel_pos = (Zlist[i].z - Zlist[Zlist[i].id_bot].z)/(Zlist[Zlist[i].id_top].z - Zlist[Zlist[i].id_bot].z);
     //}
 }
-
-//template <int dim>
-//void PntsInfo<dim>::set_ids_above_below1(){
-//    for (unsigned int i = 0; i < Zlist.size(); ++i){
-//        if (i == 0){//================================================
-//            // If this is the first node from the bottom
-
-//        }
-//    }
-
-//}
-
-//template <int dim>
-//int PntsInfo<dim>::return_top_of(int dof_in){
-//    idof = -9;
-//    // Find the id of dof we ask its top
-//    for (unsigned int i = 0; Zlist.size(); ++i){
-//        if (Zlist[i].dof == dof_in){
-//            idof = i;
-//            break;
-//        }
-//    }
-//    if (idof == -9)
-//        return idof;
-
-//    if (Zlist[idof].isTop == 1)
-//        return Zlist[idof].dof;
-
-//    if (Zlist[idof].isTop == 0 && )
-//}
-
-template <int dim>
-void PntsInfo<dim>::set_local_above_below(){
-    for (unsigned int i = 0; i < Zlist.size(); ++i){
-        if (i == 0){
-            Zlist[i].dof_above = Zlist[i+1].dof;
-            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].dof_above);
-        }
-        else if(i == Zlist.size() - 1){
-            Zlist[i].dof_below = Zlist[i-1].dof;
-            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].dof_below);
-        }
-        else{
-            Zlist[i].dof_above = Zlist[i+1].dof;
-            Zlist[i].dof_below = Zlist[i-1].dof;
-            Zlist[i].connected_above = Zlist[i].connected_with(Zlist[i].dof_above);
-            Zlist[i].connected_below = Zlist[i].connected_with(Zlist[i].dof_below);
-        }
-    }
-
-}
-
 
 
 

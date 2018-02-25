@@ -53,6 +53,8 @@ private:
     void make_grid();
     void refine_transfer(std::string prefix);
 
+    void do_one_random_refinement(double top_fraction, double bottom_fraction);
+
 
 };
 
@@ -66,7 +68,7 @@ mm_test<dim>::mm_test()
                     Triangulation<dim>::limit_level_difference_at_vertices)),
     mesh_dof_handler (triangulation),
     mesh_fe (FE_Q<dim>(1),dim),
-    mesh_struct(0.1,0.01),
+    mesh_struct(0.0001,0.0001),
     pcout(std::cout,(Utilities::MPI::this_mpi_process(mpi_communicator) == 0))
 {
     make_grid();
@@ -83,11 +85,11 @@ void mm_test<dim>::make_grid(){
     Point<dim> right_top;
     std::vector<unsigned int>	n_cells;
     if (dim == 2) {
-        right_top[0] = 5000; right_top[1] = 100;
+        right_top[0] = 10000; right_top[1] = 1000;
         n_cells.push_back(20); n_cells.push_back(5);
     }
     else if (dim == 3){
-        right_top[0] = 5000; right_top[1] = 5000; right_top[2] = 100;
+        right_top[0] = 10000; right_top[1] = 10000; right_top[2] = 1000;
         n_cells.push_back(10); n_cells.push_back(10); n_cells.push_back(3);
     }
 
@@ -97,6 +99,10 @@ void mm_test<dim>::make_grid(){
                                                       right_top,
                                                       true);
 
+    // Refine a couple of times so that we start with a more complex mesh to work with
+    for (unsigned int ir = 0; ir < 12; ++ir){
+        do_one_random_refinement(20, 95);
+    }
 }
 
 template <int dim>
@@ -336,10 +342,27 @@ void mm_test<dim>::run(){
 
         mesh_struct.printMesh("animAfter_" + std::to_string(i+2) , my_rank, mesh_dof_handler);
     }
+}
 
+//! Cells with random value below #refine_perc will be refined, and cells with random value above #coarse_perc will be coarsen
+template <int dim>
+void mm_test<dim>::do_one_random_refinement(double refine_perc, double coarse_perc){
+    typename parallel::distributed::Triangulation<dim>::active_cell_iterator
+    cell = triangulation.begin_active(),
+    endc = triangulation.end();
+    for (; cell!=endc; ++cell){
+        if (cell->is_locally_owned()){
+            int r = rand() % 100 + 1;
+            if (r < refine_perc)
+                cell->set_refine_flag ();
+            else if(r > coarse_perc)
+                cell->set_coarsen_flag();
+        }
+    }
 
-
-
+    // first prepare the triangulation
+    triangulation.prepare_coarsening_and_refinement();
+    triangulation.execute_coarsening_and_refinement ();
 
 }
 

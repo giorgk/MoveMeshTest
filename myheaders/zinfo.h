@@ -12,6 +12,23 @@
 template<class T>
 bool sort_Zlist(const T A, T B){ return (A.z < B.z); }
 
+struct DOFZ{
+    //! The degree of freedom
+    int dof;
+    //! The Z coordinate
+    double z;
+    //! the id in the Zlist that this node can be found.
+    int id;
+    //! The processor id that this node is locally owned
+    int proc;
+
+    void dummy_values(){
+        dof = -9;
+        z = -9999;
+        id = -9;
+        proc = -9;
+    }
+};
 
 
 /*!
@@ -54,18 +71,20 @@ public:
     //! nothing is added
     void Add_connections(std::vector<int> conn);
 
-    //! You should call this only after this point has at least z info and level assigned
-    //! from a previous iteration.
-    //! A typical case would be after resetting the mesh structure
+    //! The update info adds the connections and the constraints of the
+    //! new point to this one.
+    //! It is assume of cource that the new point and this one are actually the same
+    //! that they found in a different cell.
     void update_main_info(Zinfo newZ);
 
     //! This method returns true if the point is connected to this one
-    //! Essentially is considered connected if the point in question can be found
+    //! Essentially it is considered connected if the point in question can be found
     //! in the #dof_conn map of connected nodes.
     //! In practice it appears that a particular node maybe connected with one node
     //! in one cell and not connected in an another cell if the cells that share the node
-    //! have different level. However we really need this information only for the hanging
-    //! nodes where that never happens,
+    //! has different level. However this is used only after the nodes are sorted in the
+    //! z direction. Therefore we always ask to find if the node that it's imediately above or
+    //! below is connected with this one.
     bool connected_with(int dof_in);
 
 //    //! Copies the zinfo of the vertex to this vertex. The operation does that blindly
@@ -96,20 +115,10 @@ public:
     int dof_below;
 
     //! The dof of the node that serves as top for this node
-    int dof_top;
-
-    double Top_z;
-
-    //! This is the index of the #dof_top node in the list of the #PntsInfo::Zlist
-    int id_top;
+    DOFZ Top;
 
     //! The dof of the node that serves as bottom for this node
-    int dof_bot;
-
-    double Bot_z;
-
-    //! This is the index of the #dof_bot node in the list of the #PntsInfo::Zlist
-    int id_bot;
+    DOFZ Bot;
 
     //! A boolean flag that is true if the node lays on the top surface of the mesh
     int isTop;
@@ -157,19 +166,14 @@ Zinfo::Zinfo(double z_in, int dof_in, std::vector<int> cnstr_nodes, int istop, i
     dof_above = -9;
     dof_below = -9;
 
-    dof_top = -9;
-    dof_bot= -9;
-    id_top = -9;
-    id_bot = 9;
+    Top.dummy_values();
+    Bot.dummy_values();
+
     rel_pos = -9.0;
     connected_above = false;
     connected_below = false;
     isZset = false;
     is_local = false;
-    Bot_z = -999.0;
-    Top_z = -999.0;
-
-
     Add_connections(conn);
 }
 
@@ -182,8 +186,6 @@ void Zinfo::update_main_info(Zinfo newZ){
                       <<  "However the updated dof is different from the current dof" << std::endl;
         }
     }
-    dof = newZ.dof;
-    hanging = newZ.hanging;
     Add_connections(newZ.dof_conn);
     add_constraint_nodes(newZ.cnstr_nds);
 }
@@ -231,10 +233,9 @@ void Zinfo::reset(){
 
     isZset = false;
 
-    dof_top = -9;
-    dof_bot= -9;
-    id_top = -9;
-    id_bot = -9;
+    Top.dummy_values();
+    Bot.dummy_values();
+
     rel_pos = -9.0;
     connected_above = false;
     connected_below = false;
