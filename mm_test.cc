@@ -100,7 +100,7 @@ void mm_test<dim>::make_grid(){
                                                       true);
 
     // Refine a couple of times so that we start with a more complex mesh to work with
-    for (unsigned int ir = 0; ir < 12; ++ir){
+    for (unsigned int ir = 0; ir < 3; ++ir){
         do_one_random_refinement(20, 95);
     }
 }
@@ -171,7 +171,7 @@ void mm_test<dim>::run(){
                                  "iter0");
     //mesh_struct.printMesh("animBefore_0", my_rank,mesh_dof_handler);
 
-    return;
+
 
     // Set Top and Bottom elevation
     RBF<dim-1> rbf;
@@ -194,17 +194,36 @@ void mm_test<dim>::run(){
 
 
 
-    // Set initial top bottom elebation elevation
+    // Set initial top bottom elebation elevation top to nodes that are local and they lay on the top or the bottom
     typename std::map<int , PntsInfo<dim> >::iterator it;
     for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
-        it->second.T = 300;// this is supposed to set the initial elevation
-        it->second.B = 0;
+        double tt = 300 + rbf.eval(it->second.PNT);
+        double bb = 0;
+        std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+        for (; itz != it->second.Zlist.end(); ++itz){
+            if (itz->is_local){
+                itz->rel_pos = (itz->z - itz->Bot.z)/(itz->Top.z - itz->Bot.z);
+                //if (my_rank == 0){
+                //    std::cout << itz->z << " : " << itz->rel_pos << ", (" << itz->Top.z << ", " << itz->Bot.z << ")" << std::endl;
+                //}
+                if (itz->isTop){
+                    itz->z = tt;
+                    itz->isZset = true;
+                }
+                if (itz->isBot){
+                    itz->z = bb;
+                    itz->isZset = true;
+                }
+            }
+        }
+        //it->second.T = 300;// this is supposed to set the initial elevation
+        //it->second.B = 0;
         // Here we update the top
-        it->second.T += rbf.eval(it->second.PNT);
+        //it->second.T += rbf.eval(it->second.PNT);
         //std::cout << it->second.T << std::endl;
     }
 
-
+    return;
 
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
     // The structure is used to update the elevation

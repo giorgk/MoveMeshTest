@@ -835,9 +835,69 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
     typename std::map<int , PntsInfo<dim> >::iterator it;
-    std::map<int,std::pair<int,int> >::iterator it_dm; // iterator for dof_ij
+    std::map<int,std::pair<int,int> >::iterator it_ij; // iterator for dof_ij
 
     int dbg_iter = 0;
+
+    while (true){
+        int count_not_set = 0;
+        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
+            std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+            for (; itz != it->second.Zlist.end(); ++itz){
+                if (itz->is_local){
+                    if (!itz->isZset){
+                        if (itz->hanging == 1){ // if the node is hanging then compute its new elevation by averaging the
+                            // elevations of the nodes that constraint this one. Do the computation only if all the nodes
+                            // have been set
+
+                        }
+                        else{
+                            double top, bot;
+                            bool top_set = false;
+                            bool bot_set = false;
+                            if (!itz->Top.isSet){
+                                // Check if the top is local
+                                if (itz->Top.proc == my_rank){
+                                    it_ij = dof_ij.find(itz->Top.dof);
+                                    if (it_ij != dof_ij.end()){
+                                        if (PointsMap[it_ij->second.first].Zlist[it_ij->second.second].isZset){
+                                            top = PointsMap[it_ij->second.first].Zlist[it_ij->second.second].z;
+                                            itz->Top.z = top;
+                                            itz->Top.isSet = true;
+                                        }
+                                        else{
+                                            count_not_set++;
+                                        }
+                                    }
+                                }
+                                else{
+
+                                }
+
+                            }
+                            else{
+                                top = itz->Top.z;
+                                top_set = true;;
+                            }
+
+                            if (!itz->Bot.isSet){
+
+                            }
+                            else{
+                                bot = itz->Bot.z;
+                                bot_set = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+
+
+
 //    while (true){
 //        int n_not_set = 0;
 //        for (it = PointsMap.begin(); it != PointsMap.end(); ++it){

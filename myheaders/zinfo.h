@@ -21,12 +21,14 @@ struct DOFZ{
     int id;
     //! The processor id that this node is locally owned
     int proc;
+    bool isSet;
 
     void dummy_values(){
         dof = -9;
         z = -9999;
         id = -9;
         proc = -9;
+        isSet = false;
     }
 };
 
