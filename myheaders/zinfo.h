@@ -12,15 +12,24 @@
 template<class T>
 bool sort_Zlist(const T A, T B){ return (A.z < B.z); }
 
+/*!
+ * \brief The DOFZ struct is a helper struct to hold some information about a given node.
+ * It is used in the #Zinfo class to hold the information about the top and bottom nodes of
+ * a given node
+ */
 struct DOFZ{
     //! The degree of freedom
     int dof;
     //! The Z coordinate
     double z;
-    //! the id in the Zlist that this node can be found.
+    //! the id in the Zlist that this node can be found (NOT SURE IF I"LL USE THIS).
     int id;
-    //! The processor id that this node is locally owned
+    //! The processor id that this node is locally owned. If the id is negative then
+    //! the node with #dof lives in another processor but we dont know in which
+    //! processor it lives. Therefore if the #proc is negative #z, #id are also negative
+    //! and the #isSet is false.
     int proc;
+    //! isSet gets true during the #Mesh_struct<dim>::updateMeshElevation method.
     bool isSet;
 
     void dummy_values(){

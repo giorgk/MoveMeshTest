@@ -77,24 +77,21 @@ public:
      */
     int number_of_positive_dofs();
 
-    /*! THE LOGIC HAS CHANGE AND NEED TO REWRITE THIS
-     * Assign the ids above and below of each node in the Zlist
-     * Call this routine only if all the points have positive dofs.
-     * It is also assumed that each processor has all the points it needs from the other processors
-     * Two z nodes are connected if there is a cell in the triangulation that has a face with those two nodes
-     * First we loop through the z nodes that exists under this xy point
-     * The first point with index 0 is the lowest in this column. The lowest point is always connected with the node above
-     * If this is a hanging node we set a hanging node flag to true
-     * As we loop through the points we set the dofs adove and below that point.
-     * If the node we visit in the loop is hanging node there are two options:
-     * It is either connected to the node above and disconnected from the node below or the oposite.
-     * If the hanging node flag was set to true then this node should be connected with the node below.
-     * in addition in this case the hangnig node flag set back to false.
-     * If the hanging node flag was set to false the this node is disconnected from the node below and connected to node above
-     * In addition we flip the hanging flag value
+    /*! This identifies the relationships between the nodes in the #Zlist vector
+     * First loops through the points and identifies if there are connections between
+     * each node and node nodes above and below. For the first and last node we can
+     * also set during this loop the Bottom and top dof respectively and the id location.
+     * if the bottom/top node is local then we can set its z and proc information as well.
+     * By the end of this loop we have identified how the nodes are connected in the #Zlist.
      *
-     * Once the ids above/below and the connections between the nodes have been established we loop twice to find which id is top and bottom for each node
-     * The index 0 node has always itself its #Zinfo::id_bot, while the last index has itsef as its Zinfo::id_top.
+     * Next we will loop two more times. First we start from the bottom+1 node and set as bottom
+     * point the same bottom of the previous point (point below) if the two points are connected.
+     * If they are not connected then this point is a bottom for its self and all the other points
+     * above that are connected.
+     *
+     * Last we repeate the bove loop once again starting from index #Zlist.size() - 2 and moving in
+     * the oposite direction. In this loop we set the tops for each node, following the same logic
+     * as above.
     */
     void set_ids_above_below(int my_rank);
 
