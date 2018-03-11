@@ -866,6 +866,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     // assigned with the correct elevation. The relative positions also have been calculated.
 
     std::map<int, double> elev_asked;
+    int dbg_cnt = 0;
     while (true){
 
         std::vector<int> top_info_size;
@@ -996,8 +997,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             }
         }
 
-
-        return;
+        if (dbg_cnt == 0)
+            return;
     }
 
 
