@@ -885,11 +885,58 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             for (; itz != it->second.Zlist.end(); ++itz){
                 if (itz->is_local){
                     if (!itz->isZset){
-                        if (itz->hanging == 1){ // if the node is hanging then compute its new elevation by averaging the
+                        if (itz->hanging == 1){ //-----------------------IS HANGING-------------------------------
+                            // if the node is hanging then compute its new elevation by averaging the
                             // elevations of the nodes that constraint this one. Do the computation only if all the nodes
                             // have been set
+                            bool all_known = true;
+                            double sum_z = 0;
+                            for (unsigned int ii = 0; ii < itz->cnstr_nds.size(); ++ii){
+                                // Find if the node exists in the map
+                                bool not_local = false;
+                                it_ij = dof_ij.find(itz->cnstr_nds[ii]);
+                                if (it_ij != dof_ij.end()){// if exists, check if it's local
+                                    if (PointsMap[it_ij->second.first].Zlist[it_ij->second.second].is_local){
+                                        if (PointsMap[it_ij->second.first].Zlist[it_ij->second.second].isZset){
+                                            sum_z += PointsMap[it_ij->second.first].Zlist[it_ij->second.second].z;
+                                        }
+                                        else{
+                                            all_known = false;
+                                            break;
+                                        }
+                                    }
+                                    else{ // exists in the dof_ij map but is not local
+                                        not_local = true;
+                                    }
+                                }
+                                else{ // doesn't even exists in the dof_ij map
+                                    not_local = true;
+                                }
+                                if (not_local){
+                                    std::map<int, double>::iterator it_elev;
+                                    it_elev = elev_asked.find(itz->cnstr_nds[ii]);
+                                    if (it_elev != elev_asked.end()){
+                                        sum_z += it_elev->second;
+                                    }
+                                    else{
+                                        all_known = false;
+                                        dof_ask_map.insert(std::pair<int,int>(itz->cnstr_nds[ii],itz->cnstr_nds[ii]));
+                                        break;
+                                    }
+                                }
+                            }
 
-                        }
+                            if (all_known){
+                                itz->z = sum_z / static_cast<double>(itz->cnstr_nds.size());
+                                itz->isZset = true;
+                            }
+                            else{
+                                count_not_set++;
+                            }
+
+
+
+                        }//-----------------------IS HANGING-------------------------------
                         else{
                             if (!itz->Top.isSet) {
                                 // Check if the top is local
@@ -952,12 +999,14 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                     }
                                 }
                             }
-                        }
-                        if (itz->Top.isSet && itz->Bot.isSet){
-                            itz->z = itz->Top.z * itz->rel_pos + (1.0 - itz->rel_pos) * itz->Bot.z;
-                        }
-                        else{
-                            count_not_set++;
+
+                            if (itz->Top.isSet && itz->Bot.isSet){
+                                itz->z = itz->Top.z * itz->rel_pos + (1.0 - itz->rel_pos) * itz->Bot.z;
+                                itz->isZset = true;
+                            }
+                            else{
+                                count_not_set++;
+                            }
                         }
                     }
                 }
