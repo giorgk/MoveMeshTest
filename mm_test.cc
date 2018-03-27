@@ -100,9 +100,9 @@ void mm_test<dim>::make_grid(){
                                                       true);
 
     // Refine a couple of times so that we start with a more complex mesh to work with
-    for (unsigned int ir = 0; ir < 3; ++ir){
-        do_one_random_refinement(20, 95);
-    }
+    //for (unsigned int ir = 0; ir < 3; ++ir){
+    //    do_one_random_refinement(20, 95);
+    //}
 }
 
 template <int dim>
@@ -223,7 +223,7 @@ void mm_test<dim>::run(){
         //std::cout << it->second.T << std::endl;
     }
 
-    return;
+    //return;
 
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
     // The structure is used to update the elevation
@@ -234,6 +234,7 @@ void mm_test<dim>::run(){
                                     mpi_communicator,
                                     pcout,
                                     "iter0");
+    return;
 
 
     mesh_struct.printMesh("animAfter_0", my_rank,mesh_dof_handler);

@@ -481,9 +481,9 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         std::vector<Zinfo>::iterator itz;
         std::map<int,std::pair<int,int>>::iterator it_dof;
 
-        // The following loop is executed as long a processor has unknown nodes in its local dofs only
+        // The following loop is executed as long as a processor has unknown nodes in its local dofs only
         // Each processor contains non local dofs but for those their information is not correct other than
-        // they exists in the triangulation. Their connection information is also correct
+        // they exists in the triangulation. However their connection information is correct
         while (true){
             pcout << "--------------" << std::endl;
             Top_info.clear();
@@ -598,8 +598,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                 }
             }
 
-            // During development I tried two transfer schemas. One put the info into separate vectors (for the top)
-            // and one group the tranfers per type (int and double).
+            // During development I tried two transfer schemas. 1) put the info into separate vectors (for the top)
+            // and 2) group the tranfers per type (int and double).
             Send_receive_size(static_cast<unsigned int>(top_info_proc[my_rank].size()), n_proc, send_size, mpi_communicator);
             Sent_receive_data<int>(top_info_proc, send_size, my_rank, mpi_communicator, MPI_INT);
             Sent_receive_data<int>(top_info_dof_ask, send_size, my_rank, mpi_communicator, MPI_INT);
@@ -865,6 +865,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     // It is assumed that the nodes that lay on the top or bottom and they are local have already been
     // assigned with the correct elevation. The relative positions also have been calculated.
 
+    // elev_asked is a map that contains the dof and elevations of nodes that belong to other processors and this
+    // processor has asked at some point.
     std::map<int, double> elev_asked;
     int dbg_cnt = 0;
     while (true){
@@ -872,6 +874,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         std::vector<int> top_info_size;
         std::vector<int> bot_info_size;
         std::vector<std::vector<int>> dof_ask(n_proc);
+        std::map<int,int> dof_ask_map;
+        dof_ask_map.clear();
 
         int count_not_set = 0;
         for (it = PointsMap.begin(); it != PointsMap.end(); ++it){
@@ -891,9 +895,15 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                     it_ij = dof_ij.find(itz->Top.dof);
                                     if (it_ij != dof_ij.end()){
                                         if (PointsMap[it_ij->second.first].Zlist[it_ij->second.second].isZset){
-                                            itz->Top.z = PointsMap[it_ij->second.first].Zlist[it_ij->second.second].z;;
+                                            itz->Top.z = PointsMap[it_ij->second.first].Zlist[it_ij->second.second].z;
                                             itz->Top.isSet = true;
                                         }
+                                        else{
+                                            std::cerr << "dof " << PointsMap[it_ij->second.first].Zlist[it_ij->second.second].dof << " has no Z for proc " << my_rank << std::endl;
+                                        }
+                                    }
+                                    else{
+                                        std::cerr << "Node with id " << itz->Top.dof << " is local for proc " << my_rank << " but was not found" << std::endl;
                                     }
                                 }
                                 else{
@@ -905,7 +915,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                         itz->Top.isSet = true;
                                     }
                                     else{
-                                        dof_ask[my_rank].push_back(itz->Top.dof);
+                                        //dof_ask[my_rank].push_back(itz->Top.dof);
+                                        dof_ask_map.insert(std::pair<int,int>(itz->Top.dof,itz->Top.dof));
                                     }
                                 }
                             }
@@ -916,9 +927,15 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                     it_ij = dof_ij.find(itz->Bot.dof);
                                     if (it_ij != dof_ij.end()){
                                         if (PointsMap[it_ij->second.first].Zlist[it_ij->second.second].isZset){
-                                            itz->Bot.z = PointsMap[it_ij->second.first].Zlist[it_ij->second.second].z;;
+                                            itz->Bot.z = PointsMap[it_ij->second.first].Zlist[it_ij->second.second].z;
                                             itz->Bot.isSet = true;
                                         }
+                                        else{
+                                            std::cerr << "dof " << PointsMap[it_ij->second.first].Zlist[it_ij->second.second].dof << " has no Z for proc " << my_rank << std::endl;
+                                        }
+                                    }
+                                    else{
+                                        std::cerr << "Node with id " << itz->Bot.dof << " is local for proc " << my_rank << " but was not found" << std::endl;
                                     }
                                 }
                                 else{
@@ -930,7 +947,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                         itz->Bot.isSet = true;
                                     }
                                     else{
-                                        dof_ask[my_rank].push_back(itz->Bot.dof);
+                                        //dof_ask[my_rank].push_back(itz->Bot.dof);
+                                        dof_ask_map.insert(std::pair<int,int>(itz->Bot.dof,itz->Bot.dof));
                                     }
                                 }
                             }
@@ -946,6 +964,9 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             }
         }
 
+        std::cout << "Proc " << my_rank << " has " << count_not_set << " not set and " << dof_ask_map.size() << "/" << dof_ask[my_rank].size() << " dofs asked so far" << std::endl;
+
+
         // Check if all points have been set
         std::vector<int> points_not_set(n_proc);
         Send_receive_size(static_cast<unsigned int>(count_not_set), n_proc, points_not_set, mpi_communicator);
@@ -954,6 +975,13 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
             count_not_set = count_not_set + points_not_set[i];
         if (count_not_set == 0)
             break;
+
+        //copy unknown dofs from map to vector
+        for (unsigned int iproc = 0; iproc < n_proc; ++iproc)
+            dof_ask[iproc].clear();
+        for (std::map<int,int>::iterator itemp = dof_ask_map.begin(); itemp != dof_ask_map.end(); ++itemp)
+            dof_ask[my_rank].push_back(itemp->first);
+
 
         // if there are points that have unkonwn elevations from the local processor
         // communicate them with the other processors
@@ -975,6 +1003,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                     int iz = it_ij->second.second;
                     if (PointsMap[ipnt].Zlist[iz].is_local){
                         if (PointsMap[ipnt].Zlist[iz].isZset){
+                            std::cout << "I'm rank " << my_rank << " and I know the Z for " << dof_ask[i_proc][i] << " : " << PointsMap[ipnt].Zlist[iz].z << std::endl;
                             dof_ask_reply[my_rank].push_back(dof_ask[i_proc][i]);
                             dof_ask_z[my_rank].push_back(PointsMap[ipnt].Zlist[iz].z);
                         }
@@ -982,7 +1011,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 }
             }
         }
-
+return;
         std::vector<int> reply_size(n_proc);
         Send_receive_size(static_cast<unsigned int>(dof_ask_reply.size()), n_proc, reply_size, mpi_communicator);
         Sent_receive_data<int>(dof_ask_reply, reply_size, my_rank, mpi_communicator, MPI_INT);
