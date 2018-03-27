@@ -100,9 +100,9 @@ void mm_test<dim>::make_grid(){
                                                       true);
 
     // Refine a couple of times so that we start with a more complex mesh to work with
-    //for (unsigned int ir = 0; ir < 3; ++ir){
-    //    do_one_random_refinement(20, 95);
-    //}
+    for (unsigned int ir = 0; ir < 1; ++ir){
+        do_one_random_refinement(20, 95);
+    }
 }
 
 template <int dim>

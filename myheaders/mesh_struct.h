@@ -870,6 +870,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     std::map<int, double> elev_asked;
     int dbg_cnt = 0;
     while (true){
+        MPI_Barrier(mpi_communicator);
+        pcout << "========= " << dbg_cnt << " =========" << std::endl;
 
         std::vector<int> top_info_size;
         std::vector<int> bot_info_size;
@@ -915,7 +917,6 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                         itz->Top.isSet = true;
                                     }
                                     else{
-                                        //dof_ask[my_rank].push_back(itz->Top.dof);
                                         dof_ask_map.insert(std::pair<int,int>(itz->Top.dof,itz->Top.dof));
                                     }
                                 }
@@ -947,7 +948,6 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                         itz->Bot.isSet = true;
                                     }
                                     else{
-                                        //dof_ask[my_rank].push_back(itz->Bot.dof);
                                         dof_ask_map.insert(std::pair<int,int>(itz->Bot.dof,itz->Bot.dof));
                                     }
                                 }
@@ -963,9 +963,8 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 }
             }
         }
-
-        std::cout << "Proc " << my_rank << " has " << count_not_set << " not set and " << dof_ask_map.size() << "/" << dof_ask[my_rank].size() << " dofs asked so far" << std::endl;
-
+        MPI_Barrier(mpi_communicator);
+        std::cout << "Proc " << my_rank << " has " << count_not_set << " not set and " << dof_ask_map.size() << " dofs asked so far" << std::endl;
 
         // Check if all points have been set
         std::vector<int> points_not_set(n_proc);
@@ -976,17 +975,24 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         if (count_not_set == 0)
             break;
 
+        if (dbg_cnt == 1)
+            return;
+        //std::cout << "Rank " << my_rank <<" : " << count_not_set << std::endl;
+
         //copy unknown dofs from map to vector
         for (unsigned int iproc = 0; iproc < n_proc; ++iproc)
             dof_ask[iproc].clear();
         for (std::map<int,int>::iterator itemp = dof_ask_map.begin(); itemp != dof_ask_map.end(); ++itemp)
             dof_ask[my_rank].push_back(itemp->first);
 
+        MPI_Barrier(mpi_communicator);
+        //std::cout << "Rank " << my_rank << " has " << dof_ask[my_rank].size() << std::endl;
+
 
         // if there are points that have unkonwn elevations from the local processor
         // communicate them with the other processors
         std::vector<int> dof_ask_size(n_proc);
-        Send_receive_size(static_cast<unsigned int>(dof_ask.size()), n_proc, dof_ask_size, mpi_communicator);
+        Send_receive_size(static_cast<unsigned int>(dof_ask[my_rank].size()), n_proc, dof_ask_size, mpi_communicator);
         Sent_receive_data<int>(dof_ask, dof_ask_size, my_rank, mpi_communicator, MPI_INT);
 
         // loop through the requested points and if there are dofs that are local with its elevation set
@@ -1003,7 +1009,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                     int iz = it_ij->second.second;
                     if (PointsMap[ipnt].Zlist[iz].is_local){
                         if (PointsMap[ipnt].Zlist[iz].isZset){
-                            std::cout << "I'm rank " << my_rank << " and I know the Z for " << dof_ask[i_proc][i] << " : " << PointsMap[ipnt].Zlist[iz].z << std::endl;
+                            //std::cout << "I'm rank " << my_rank << " and I know the Z for " << dof_ask[i_proc][i] << " : " << PointsMap[ipnt].Zlist[iz].z << std::endl;
                             dof_ask_reply[my_rank].push_back(dof_ask[i_proc][i]);
                             dof_ask_z[my_rank].push_back(PointsMap[ipnt].Zlist[iz].z);
                         }
@@ -1011,9 +1017,9 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                 }
             }
         }
-return;
+
         std::vector<int> reply_size(n_proc);
-        Send_receive_size(static_cast<unsigned int>(dof_ask_reply.size()), n_proc, reply_size, mpi_communicator);
+        Send_receive_size(static_cast<unsigned int>(dof_ask_reply[my_rank].size()), n_proc, reply_size, mpi_communicator);
         Sent_receive_data<int>(dof_ask_reply, reply_size, my_rank, mpi_communicator, MPI_INT);
         Sent_receive_data<double>(dof_ask_z, reply_size, my_rank, mpi_communicator, MPI_DOUBLE);
         // loop again to collect the new points that have Z.
@@ -1025,11 +1031,11 @@ return;
                 elev_asked[dof_ask_reply[i_proc][i]] = dof_ask_z[i_proc][i];
             }
         }
-
-        if (dbg_cnt == 0)
-            return;
+        dbg_cnt++;
     }
 
+    std::cout << " Exit while loop" << std::endl;
+    return;
 
 
 
