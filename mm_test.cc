@@ -100,7 +100,7 @@ void mm_test<dim>::make_grid(){
                                                       true);
 
     // Refine a couple of times so that we start with a more complex mesh to work with
-    for (unsigned int ir = 0; ir < 1; ++ir){
+    for (unsigned int ir = 0; ir < 4; ++ir){
         do_one_random_refinement(20, 95);
     }
 }
@@ -178,14 +178,25 @@ void mm_test<dim>::run(){
     std::vector<Point<dim-1> > cntrs;
     std::vector<double> wdth;
 
-    for (unsigned int i = 1; i < 5; ++i){
-        for (unsigned int j = 1; j < 5; ++j){
+
+    if (dim == 2){
+        for (unsigned int i = 1; i < 5; ++i){
             Point<dim-1> temp;
-            temp[0] = static_cast<double>(i)*1000;
-            if (dim == 3)
-                temp[1] = static_cast<double>(j)*1000;
+            temp[0] = static_cast<double>(i)*2000;
             cntrs.push_back(temp);
             wdth.push_back(0.001);
+        }
+    }
+    else if (dim == 3){
+        for (unsigned int i = 1; i < 5; ++i){
+            for (unsigned int j = 1; j < 5; ++j){
+                Point<dim-1> temp;
+                temp[0] = static_cast<double>(i)*1000;
+                if (dim == 3)
+                    temp[1] = static_cast<double>(j)*1000;
+                cntrs.push_back(temp);
+                wdth.push_back(0.001);
+            }
         }
     }
     rbf.assign_centers(cntrs,wdth);
@@ -382,7 +393,7 @@ void mm_test<dim>::do_one_random_refinement(double refine_perc, double coarse_pe
 
     // first prepare the triangulation
     triangulation.prepare_coarsening_and_refinement();
-    triangulation.execute_coarsening_and_refinement ();
+    triangulation.execute_coarsening_and_refinement();
 
 }
 
@@ -392,8 +403,9 @@ int main (int argc, char **argv){
     //srand (time(NULL));
     //int rr = time(NULL);
     //std::cout << rr << std::endl;
-    srand(1517505046);
     //srand(rr);
+    //srand(1517505046);
+    srand(1522316091);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
     //This is going to create a box with uniform bottom at 0 and uniform top 100
