@@ -43,6 +43,8 @@ private:
     FESystem<dim>                              	mesh_fe;
     TrilinosWrappers::MPI::Vector               mesh_vertices;
     TrilinosWrappers::MPI::Vector               distributed_mesh_vertices;
+    TrilinosWrappers::MPI::Vector               mesh_Offset_vertices;
+    TrilinosWrappers::MPI::Vector               distributed_mesh_Offset_vertices;
     IndexSet                                    mesh_locally_owned;
     IndexSet                                    mesh_locally_relevant;
     ConstraintMatrix                            mesh_constraints;
@@ -52,6 +54,7 @@ private:
 
     void make_grid();
     void refine_transfer(std::string prefix);
+    void refine_transfer1();
 
     void do_one_random_refinement(double top_fraction, double bottom_fraction);
 
@@ -100,9 +103,9 @@ void mm_test<dim>::make_grid(){
                                                       true);
 
     // Refine a couple of times so that we start with a more complex mesh to work with
-    for (unsigned int ir = 0; ir < 4; ++ir){
-        do_one_random_refinement(20, 95);
-    }
+    //for (unsigned int ir = 0; ir < 0; ++ir){
+    //    do_one_random_refinement(20, 95);
+    //}
 }
 
 template <int dim>
@@ -150,8 +153,56 @@ void mm_test<dim>::refine_transfer(std::string prefix){
     mesh_struct.move_vertices(mesh_dof_handler,
                               mesh_vertices,
                               my_rank, prefix);
+}
 
+template <int dim>
+void mm_test<dim>::refine_transfer1(){
+    std::vector<bool> locally_owned_vertices = triangulation.get_used_vertices();
+    {
+        // Create the boolean input of communicate_locally_moved_vertices method
+        // see implementation of GridTools::get_locally_owned_vertices in grid_tools.cc line 2172 (8.5.0)
+        typename parallel::distributed::Triangulation<dim>::active_cell_iterator
+        cell = triangulation.begin_active(),
+        endc = triangulation.end();
+        for (; cell != endc; ++cell){
+            if (cell->is_artificial() ||
+                    (cell->is_ghost() && cell->subdomain_id() < triangulation.locally_owned_subdomain() )){
+                for (unsigned int v = 0; v<GeometryInfo<dim>::vertices_per_cell; ++v)
+                    locally_owned_vertices[cell->vertex_index(v)] = false;
+            }
+        }
+    }
 
+    // Call the method before
+    triangulation.communicate_locally_moved_vertices(locally_owned_vertices);
+
+    {// Apply the opposite displacement
+        std::map<types::global_dof_index, bool> set_dof;
+        std::map<types::global_dof_index, bool>::iterator it_set;
+        typename DoFHandler<dim>::active_cell_iterator
+        cell = mesh_dof_handler.begin_active(),
+        endc = mesh_dof_handler.end();
+        for (; cell != endc; ++cell){
+            if (cell->is_locally_owned()){
+                for (unsigned int vertex_no = 0; vertex_no < GeometryInfo<dim>::vertices_per_cell; ++vertex_no){
+                    Point<dim> &v=cell->vertex(vertex_no);
+                    for (unsigned int dir=0; dir < dim; ++dir){
+                        types::global_dof_index dof = cell->vertex_dof_index(vertex_no, dir);
+                        it_set = set_dof.find(dof);
+                        if (it_set == set_dof.end()){
+                            v(dir) = v(dir) - mesh_Offset_vertices(dof);
+                            set_dof[dof] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    triangulation.communicate_locally_moved_vertices(locally_owned_vertices);
+    // now the mesh should be consistent as when it was first created
+    // so we can hopefully refine it
+    triangulation.execute_coarsening_and_refinement ();
 }
 
 template <int dim>
@@ -166,6 +217,8 @@ void mm_test<dim>::run(){
                                  mesh_locally_relevant,
                                  mesh_vertices,
                                  distributed_mesh_vertices,
+                                 mesh_Offset_vertices,
+                                 distributed_mesh_Offset_vertices,
                                  mpi_communicator,
                                  pcout,
                                  "iter0");
@@ -239,20 +292,23 @@ void mm_test<dim>::run(){
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
     // The structure is used to update the elevation
     mesh_struct.updateMeshElevation(mesh_dof_handler,
+                                    triangulation,
                                     mesh_constraints,
                                     mesh_vertices,
                                     distributed_mesh_vertices,
+                                    mesh_Offset_vertices,
+                                    distributed_mesh_Offset_vertices,
                                     mpi_communicator,
                                     pcout,
                                     "iter0");
-    return;
-
-
-    mesh_struct.printMesh("animAfter_0", my_rank,mesh_dof_handler);
     //return;
 
 
-    // refine the updated elevations
+    mesh_struct.printMesh("animAfter_0", my_rank,mesh_dof_handler);
+
+
+
+    // flag cells for refinement
     typename parallel::distributed::Triangulation<dim>::active_cell_iterator
     cell = triangulation.begin_active(),
     endc = triangulation.end();
@@ -265,10 +321,14 @@ void mm_test<dim>::run(){
                 cell->set_coarsen_flag();
         }
     }
+
+
+
     // The refine transfer refines and updates the triangulation and mesh_dof_handler
-    refine_transfer("refine0");
+    //refine_transfer("refine0");
+    refine_transfer1();
     mesh_struct.printMesh("animBefore_1", my_rank,mesh_dof_handler);
-    //return;
+    return;
 
     // Then we need to update the custon mesh structure after any change of the triangulation
     mesh_struct.updateMeshStruct(mesh_dof_handler,
@@ -278,6 +338,8 @@ void mm_test<dim>::run(){
                                  mesh_locally_relevant,
                                  mesh_vertices,
                                  distributed_mesh_vertices,
+                                 mesh_Offset_vertices,
+                                 distributed_mesh_Offset_vertices,
                                  mpi_communicator,
                                  pcout, "iter1");
     //return;
@@ -309,9 +371,12 @@ void mm_test<dim>::run(){
     //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
     mesh_struct.updateMeshElevation(mesh_dof_handler,
+                                    triangulation,
                                     mesh_constraints,
                                     mesh_vertices,
                                     distributed_mesh_vertices,
+                                    mesh_Offset_vertices,
+                                    distributed_mesh_Offset_vertices,
                                     mpi_communicator,
                                     pcout,"iter1");
     mesh_struct.printMesh("animAfter_1", my_rank,mesh_dof_handler);
@@ -350,6 +415,8 @@ void mm_test<dim>::run(){
                                      mesh_locally_relevant,
                                      mesh_vertices,
                                      distributed_mesh_vertices,
+                                     mesh_Offset_vertices,
+                                     distributed_mesh_Offset_vertices,
                                      mpi_communicator,
                                      pcout, "iter" + std::to_string(i+2));
 
@@ -365,9 +432,12 @@ void mm_test<dim>::run(){
         //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
         mesh_struct.updateMeshElevation(mesh_dof_handler,
+                                        triangulation,
                                         mesh_constraints,
                                         mesh_vertices,
                                         distributed_mesh_vertices,
+                                        mesh_Offset_vertices,
+                                        distributed_mesh_Offset_vertices,
                                         mpi_communicator,
                                         pcout, "iter" + std::to_string(i+2));
 

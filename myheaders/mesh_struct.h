@@ -8,6 +8,8 @@
 #include <deal.II/fe/mapping_q1.h>
 #include <deal.II/lac/constraint_matrix.h>
 #include <deal.II/lac/trilinos_vector.h>
+#include <deal.II/distributed/tria.h>
+#include <deal.II/distributed/solution_transfer.h>
 #include <deal.II/base/conditional_ostream.h>
 
 #include <algorithm>
@@ -152,6 +154,8 @@ public:
                          IndexSet& mesh_locally_relevant,
                          TrilinosWrappers::MPI::Vector& mesh_vertices,
                          TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
+                         TrilinosWrappers::MPI::Vector& mesh_Offset_vertices,
+                         TrilinosWrappers::MPI::Vector& distributed_mesh_Offset_vertices,
                          MPI_Comm&  mpi_communicator,
                          ConditionalOStream pcout,
                          std::string prefix);
@@ -162,9 +166,12 @@ public:
     //! The update starts with the nodes at level 0, which can be set directly as they do not depend on
     //! any other node.
     void updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
+                             parallel::distributed::Triangulation<dim> &triangulation,
                              ConstraintMatrix& mesh_constraints,
                              TrilinosWrappers::MPI::Vector& mesh_vertices,
                              TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
+                             TrilinosWrappers::MPI::Vector& mesh_Offset_vertices,
+                             TrilinosWrappers::MPI::Vector& distributed_mesh_Offset_vertices,
                              MPI_Comm&  mpi_communicator,
                              ConditionalOStream pcout,
                              std::string prefix);
@@ -302,6 +309,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                                        IndexSet& mesh_locally_relevant,
                                        TrilinosWrappers::MPI::Vector& mesh_vertices,
                                        TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
+                                       TrilinosWrappers::MPI::Vector& mesh_Offset_vertices,
+                                       TrilinosWrappers::MPI::Vector& distributed_mesh_Offset_vertices,
                                        MPI_Comm&  mpi_communicator,
                                        ConditionalOStream pcout,
                                        std::string prefix){
@@ -326,6 +335,8 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     DoFTools::extract_locally_relevant_dofs (mesh_dof_handler, mesh_locally_relevant);
     mesh_vertices.reinit (mesh_locally_owned, mesh_locally_relevant, mpi_communicator);
     distributed_mesh_vertices.reinit(mesh_locally_owned, mpi_communicator);
+    mesh_Offset_vertices.reinit (mesh_locally_owned, mesh_locally_relevant, mpi_communicator);
+    distributed_mesh_Offset_vertices.reinit(mesh_locally_owned, mpi_communicator);
 
     const std::vector<Point<dim> > mesh_support_points
                                   = mesh_fe.base_element(0).get_unit_support_points();
@@ -847,9 +858,12 @@ void Mesh_struct<dim>::dbg_meshStructInfo3D(std::string filename, unsigned int m
 
 template<int dim>
 void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
+                                           parallel::distributed::Triangulation<dim>& 	triangulation,
                                            ConstraintMatrix& mesh_constraints,
                                            TrilinosWrappers::MPI::Vector& mesh_vertices,
                                            TrilinosWrappers::MPI::Vector& distributed_mesh_vertices,
+                                           TrilinosWrappers::MPI::Vector& mesh_Offset_vertices,
+                                           TrilinosWrappers::MPI::Vector& distributed_mesh_Offset_vertices,
                                            MPI_Comm&  mpi_communicator,
                                            ConditionalOStream pcout,
                                            std::string prefix){
@@ -901,7 +915,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                             sum_z += PointsMap[it_ij->second.first].Zlist[it_ij->second.second].z;
                                         }
                                         else{
-                                            std::cout << "Proc " << my_rank << " has " << itz->dof << " with not set local " << itz->cnstr_nds[ii] << std::endl;
+                                            //std::cout << "Proc " << my_rank << " has " << itz->dof << " with not set local " << itz->cnstr_nds[ii] << std::endl;
                                             all_known = false;
                                             break;
                                         }
@@ -920,7 +934,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                         sum_z += it_elev->second;
                                     }
                                     else{
-                                        std::cout << "Proc " << my_rank << " has " << itz->dof << " with not set NONlocal " << itz->cnstr_nds[ii] << std::endl;
+                                        //std::cout << "Proc " << my_rank << " has " << itz->dof << " with not set NONlocal " << itz->cnstr_nds[ii] << std::endl;
                                         all_known = false;
                                         dof_ask_map.insert(std::pair<int,int>(itz->cnstr_nds[ii],itz->cnstr_nds[ii]));
                                         break;
@@ -947,7 +961,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                             itz->Top.isSet = true;
                                         }
                                         else{
-                                            std::cerr << "dof " << PointsMap[it_ij->second.first].Zlist[it_ij->second.second].dof << " has no Z for proc " << my_rank << std::endl;
+                                            //std::cerr << "dof " << PointsMap[it_ij->second.first].Zlist[it_ij->second.second].dof << " has no Z for proc " << my_rank << std::endl;
                                         }
                                     }
                                     else{
@@ -978,7 +992,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
                                             itz->Bot.isSet = true;
                                         }
                                         else{
-                                            std::cerr << "dof " << PointsMap[it_ij->second.first].Zlist[it_ij->second.second].dof << " has no Z for proc " << my_rank << std::endl;
+                                            //std::cerr << "dof " << PointsMap[it_ij->second.first].Zlist[it_ij->second.second].dof << " has no Z for proc " << my_rank << std::endl;
                                         }
                                     }
                                     else{
@@ -1083,13 +1097,13 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         dbg_cnt++;
     }
 
-    std::cout << " Exit while loop" << std::endl;
+    //std::cout << " Exit while loop" << std::endl;
     dbg_meshStructInfo3D("Test03_" + prefix + "_", my_rank);
-    return;
 
 
 
 
+    MPI_Barrier(mpi_communicator);
     std::cout << "Rank " << my_rank << " has converged" << std::endl;
 
     MPI_Barrier(mpi_communicator);
@@ -1100,25 +1114,48 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
         for (; itz != it->second.Zlist.end(); ++itz){
             if (distributed_mesh_vertices.in_local_range(static_cast<unsigned int >(itz->dof))){
-                distributed_mesh_vertices[static_cast<unsigned int >(itz->dof)] = itz->z;
+                double dz = itz->z - distributed_mesh_vertices[static_cast<unsigned int >(itz->dof)];
+                distributed_mesh_Offset_vertices[static_cast<unsigned int >(itz->dof)] = dz;
+                distributed_mesh_vertices[static_cast<unsigned int >(itz->dof)] += dz;
             }
         }
     }
 
 
-    dbg_meshStructInfo3D("After3D_Elev_" + prefix + "_", my_rank);
-
     // The compress sends the data to the processors that owns the data
-    distributed_mesh_vertices.compress(VectorOperation::insert);
+    distributed_mesh_Offset_vertices.compress(VectorOperation::insert);
+    distributed_mesh_vertices.compress(VectorOperation::insert); // This was commented in the original dev code
 
-    // updates the elevations to the constraint nodes --------------------------
+
+    // updates the elevations and offsets to the constraint nodes --------------------------
+    mesh_constraints.distribute(distributed_mesh_Offset_vertices);
+    mesh_Offset_vertices = distributed_mesh_Offset_vertices;
+
     mesh_constraints.distribute(distributed_mesh_vertices);
     mesh_vertices = distributed_mesh_vertices;
+
+    //dbg_meshStructInfo3D("After3D_Elev_" + prefix + "_", my_rank);
+
+
 
     //move the actual vertices ------------------------------------------------
     move_vertices(mesh_dof_handler,
                   mesh_vertices,
                   my_rank, prefix);
+
+    std::vector<bool> locally_owned_vertices = triangulation.get_used_vertices();
+    typename parallel::distributed::Triangulation<dim>::active_cell_iterator
+    cell = triangulation.begin_active(),
+    endc = triangulation.end();
+    for (; cell!=endc; ++cell){
+        if (cell->is_artificial() ||
+                (cell->is_ghost() && cell->subdomain_id() < triangulation.locally_owned_subdomain() )){
+            for (unsigned int v=0; v<GeometryInfo<dim>::vertices_per_cell; ++v)
+                locally_owned_vertices[cell->vertex_index(v)] = false;
+        }
+    }
+    triangulation.communicate_locally_moved_vertices(locally_owned_vertices);
+
 }
 
 template <int dim>
