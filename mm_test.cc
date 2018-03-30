@@ -57,6 +57,10 @@ private:
     void refine_transfer1();
 
     void do_one_random_refinement(double top_fraction, double bottom_fraction);
+    void set_initial_grid();
+    void simulate(RBF<dim-1>& rbf);
+    void flag_cells_4_refinement();
+
 
 
 };
@@ -106,6 +110,101 @@ void mm_test<dim>::make_grid(){
     //for (unsigned int ir = 0; ir < 0; ++ir){
     //    do_one_random_refinement(20, 95);
     //}
+}
+
+template<int dim>
+void mm_test<dim>::set_initial_grid(){
+
+    mesh_struct.updateMeshStruct(mesh_dof_handler,
+                                 mesh_fe,
+                                 mesh_constraints,
+                                 mesh_locally_owned,
+                                 mesh_locally_relevant,
+                                 mesh_vertices,
+                                 distributed_mesh_vertices,
+                                 mesh_Offset_vertices,
+                                 distributed_mesh_Offset_vertices,
+                                 mpi_communicator,
+                                 pcout,
+                                 "iter0");
+
+    double tt = 300;
+    double bb = 0;
+    typename std::map<int , PntsInfo<dim> >::iterator it;
+    for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
+        std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+        for (; itz != it->second.Zlist.end(); ++itz){
+            if (itz->is_local){
+                itz->rel_pos = (itz->z - itz->Bot.z)/(itz->Top.z - itz->Bot.z);
+                if (itz->isTop){
+                    itz->z = tt;
+                    itz->isZset = true;
+                }
+                if (itz->isBot){
+                    itz->z = bb;
+                    itz->isZset = true;
+                }
+            }
+        }
+    }
+
+    mesh_struct.updateMeshElevation(mesh_dof_handler,
+                                    triangulation,
+                                    mesh_constraints,
+                                    mesh_vertices,
+                                    distributed_mesh_vertices,
+                                    mesh_Offset_vertices,
+                                    distributed_mesh_Offset_vertices,
+                                    mpi_communicator,
+                                    pcout,
+                                    "iter0");
+}
+
+template <int dim>
+void mm_test<dim>::simulate(RBF<dim-1> &rbf){
+    // Instead solving the flow equations which is going to give the new surface elevation
+    // we will generate a surface elevation using Radial basis functions
+
+    rbf.clear();
+    std::vector<Point<dim-1> > centers;
+    std::vector<double> widths;
+    if (dim == 2){
+        for (unsigned int i = 1; i < 5; ++i){
+            Point<dim-1> temp;
+            temp[0] = static_cast<double>(i)*2000;
+            centers.push_back(temp);
+            widths.push_back(0.001);
+        }
+    }
+    else if (dim == 3){
+        for (unsigned int i = 1; i < 5; ++i){
+            for (unsigned int j = 1; j < 5; ++j){
+                Point<dim-1> temp;
+                temp[0] = static_cast<double>(i)*2000;
+                temp[1] = static_cast<double>(j)*1000;
+                centers.push_back(temp);
+                widths.push_back(0.001);
+            }
+        }
+    }
+    rbf.assign_centers(centers,widths);
+    rbf.assign_weights(mpi_communicator);
+}
+
+template <int dim>
+void mm_test<dim>::flag_cells_4_refinement(){
+    typename parallel::distributed::Triangulation<dim>::active_cell_iterator
+    cell = triangulation.begin_active(),
+    endc = triangulation.end();
+    for (; cell!=endc; ++cell){
+        if (cell->is_locally_owned()){
+            int r = rand() % 100 + 1;
+            if (r < 20)
+                cell->set_refine_flag ();
+            else if (r > 95)
+                cell->set_coarsen_flag();
+        }
+    }
 }
 
 template <int dim>
@@ -209,205 +308,16 @@ template <int dim>
 void mm_test<dim>::run(){
     unsigned int my_rank = Utilities::MPI::this_mpi_process(mpi_communicator);
 
-    // after we generated the mesh we update the custom Mesh structure
-    mesh_struct.updateMeshStruct(mesh_dof_handler,
-                                 mesh_fe,
-                                 mesh_constraints,
-                                 mesh_locally_owned,
-                                 mesh_locally_relevant,
-                                 mesh_vertices,
-                                 distributed_mesh_vertices,
-                                 mesh_Offset_vertices,
-                                 distributed_mesh_Offset_vertices,
-                                 mpi_communicator,
-                                 pcout,
-                                 "iter0");
-    //mesh_struct.printMesh("animBefore_0", my_rank,mesh_dof_handler);
-
-
-
-    // Set Top and Bottom elevation
-    RBF<dim-1> rbf;
-    std::vector<Point<dim-1> > cntrs;
-    std::vector<double> wdth;
-
-
-    if (dim == 2){
-        for (unsigned int i = 1; i < 5; ++i){
-            Point<dim-1> temp;
-            temp[0] = static_cast<double>(i)*2000;
-            cntrs.push_back(temp);
-            wdth.push_back(0.001);
-        }
-    }
-    else if (dim == 3){
-        for (unsigned int i = 1; i < 5; ++i){
-            for (unsigned int j = 1; j < 5; ++j){
-                Point<dim-1> temp;
-                temp[0] = static_cast<double>(i)*1000;
-                if (dim == 3)
-                    temp[1] = static_cast<double>(j)*1000;
-                cntrs.push_back(temp);
-                wdth.push_back(0.001);
-            }
-        }
-    }
-    rbf.assign_centers(cntrs,wdth);
-    rbf.assign_weights(mpi_communicator);
-
-
-
-
-    // Set initial top bottom elebation elevation top to nodes that are local and they lay on the top or the bottom
-    typename std::map<int , PntsInfo<dim> >::iterator it;
-    for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
-        double tt = 300 + rbf.eval(it->second.PNT);
-        double bb = 0;
-        std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
-        for (; itz != it->second.Zlist.end(); ++itz){
-            if (itz->is_local){
-                itz->rel_pos = (itz->z - itz->Bot.z)/(itz->Top.z - itz->Bot.z);
-                //if (my_rank == 0){
-                //    std::cout << itz->z << " : " << itz->rel_pos << ", (" << itz->Top.z << ", " << itz->Bot.z << ")" << std::endl;
-                //}
-                if (itz->isTop){
-                    itz->z = tt;
-                    itz->isZset = true;
-                }
-                if (itz->isBot){
-                    itz->z = bb;
-                    itz->isZset = true;
-                }
-            }
-        }
-        //it->second.T = 300;// this is supposed to set the initial elevation
-        //it->second.B = 0;
-        // Here we update the top
-        //it->second.T += rbf.eval(it->second.PNT);
-        //std::cout << it->second.T << std::endl;
-    }
-
-    //return;
-
-    //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
-    // The structure is used to update the elevation
-    mesh_struct.updateMeshElevation(mesh_dof_handler,
-                                    triangulation,
-                                    mesh_constraints,
-                                    mesh_vertices,
-                                    distributed_mesh_vertices,
-                                    mesh_Offset_vertices,
-                                    distributed_mesh_Offset_vertices,
-                                    mpi_communicator,
-                                    pcout,
-                                    "iter0");
-    //return;
-
-
+    set_initial_grid();
     mesh_struct.printMesh("animAfter_0", my_rank,mesh_dof_handler);
 
+    RBF<dim-1> rbf;
+    for (unsigned int iter = 0; iter < 1; ++iter){
+        pcout << "====================== ITER: " << iter << "=============================" << std::endl;
+        simulate(rbf);
+        flag_cells_4_refinement();
+        refine_transfer1();
 
-
-    // flag cells for refinement
-    typename parallel::distributed::Triangulation<dim>::active_cell_iterator
-    cell = triangulation.begin_active(),
-    endc = triangulation.end();
-    for (; cell!=endc; ++cell){
-        if (cell->is_locally_owned()){
-            int r = rand() % 100 + 1;
-            if (r < 20)
-                cell->set_refine_flag ();
-            else if(r > 95)
-                cell->set_coarsen_flag();
-        }
-    }
-
-
-
-    // The refine transfer refines and updates the triangulation and mesh_dof_handler
-    //refine_transfer("refine0");
-    refine_transfer1();
-    mesh_struct.printMesh("animBefore_1", my_rank,mesh_dof_handler);
-    return;
-
-    // Then we need to update the custon mesh structure after any change of the triangulation
-    mesh_struct.updateMeshStruct(mesh_dof_handler,
-                                 mesh_fe,
-                                 mesh_constraints,
-                                 mesh_locally_owned,
-                                 mesh_locally_relevant,
-                                 mesh_vertices,
-                                 distributed_mesh_vertices,
-                                 mesh_Offset_vertices,
-                                 distributed_mesh_Offset_vertices,
-                                 mpi_communicator,
-                                 pcout, "iter1");
-    //return;
-
-    //std::cout << "------------------------------------------------------------" << std::endl;
-
-    // modify top function
-    for (unsigned int i = 0; i < 5; ++i){
-        for (unsigned int j = 0; j < 5; ++j){
-            Point<dim-1> temp;
-            temp[0] = static_cast<double>(i)*1000 + 500;
-            if (dim == 3)
-                temp[1] = static_cast<double>(j)*1000 + 500;
-            cntrs.push_back(temp);
-            wdth.push_back(0.002);
-        }
-    }
-    rbf.assign_centers(cntrs,wdth);
-    rbf.assign_weights(mpi_communicator);
-
-
-
-    for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
-        it->second.B = 0;
-        it->second.T = 300;
-        it->second.T += rbf.eval(it->second.PNT);
-        //std::cout << rbf.eval(it->second.PNT) << std::endl;
-    }
-    //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
-
-    mesh_struct.updateMeshElevation(mesh_dof_handler,
-                                    triangulation,
-                                    mesh_constraints,
-                                    mesh_vertices,
-                                    distributed_mesh_vertices,
-                                    mesh_Offset_vertices,
-                                    distributed_mesh_Offset_vertices,
-                                    mpi_communicator,
-                                    pcout,"iter1");
-    mesh_struct.printMesh("animAfter_1", my_rank,mesh_dof_handler);
-    //return;
-
-
-    // ------------------ Second refinment iteration ---------------------------------------------------
-
-    for (int i = 0; i < 10; ++i){
-        pcout << "====================== ITER: " << i << "=============================" << std::endl;
-        // refine the updated elevations
-        cell = triangulation.begin_active(),
-        endc = triangulation.end();
-        for (; cell!=endc; ++cell){
-            if (cell->is_locally_owned()){
-                int r = rand() % 100 + 1;
-                if (r < 10)
-                    cell->set_refine_flag();
-                else if(r > 95)
-                    cell->set_coarsen_flag();
-            }
-        }
-        // The refine transfer refines and updates the triangulation and mesh_dof_handler
-        refine_transfer("refine" + std::to_string(i+1));
-        mesh_struct.printMesh("animBefore_" + std::to_string(i+2) , my_rank, mesh_dof_handler);
-        //return;
-        if (i == 8)
-            return;
-
-
-        // Then we need to update the custon mesh structure after any change of the triangulation
         mesh_struct.updateMeshStruct(mesh_dof_handler,
                                      mesh_fe,
                                      mesh_constraints,
@@ -418,18 +328,30 @@ void mm_test<dim>::run(){
                                      mesh_Offset_vertices,
                                      distributed_mesh_Offset_vertices,
                                      mpi_communicator,
-                                     pcout, "iter" + std::to_string(i+2));
+                                     pcout,
+                                     "iter0");
 
-
-
-        rbf.assign_weights(mpi_communicator);
-
-        for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
-            it->second.B = 0;
-            it->second.T = 300;
-            it->second.T += rbf.eval(it->second.PNT);
+        { // Set the new elevations
+            double tt = 300;
+            double bb = 0;
+            typename std::map<int , PntsInfo<dim> >::iterator it;
+            for (it = mesh_struct.PointsMap.begin(); it != mesh_struct.PointsMap.end(); ++it){
+                std::vector<Zinfo>::iterator itz = it->second.Zlist.begin();
+                for (; itz != it->second.Zlist.end(); ++itz){
+                    if (itz->is_local){
+                        itz->rel_pos = (itz->z - itz->Bot.z)/(itz->Top.z - itz->Bot.z);
+                        if (itz->isTop){
+                            itz->z = tt + rbf.eval(it->second.PNT);
+                            itz->isZset = true;
+                        }
+                        if (itz->isBot){
+                            itz->z = bb;
+                            itz->isZset = true;
+                        }
+                    }
+                }
+            }
         }
-        //std::cout << "I'm rank: " << my_rank << " V(20)= " << rbf.eval(20) << std::endl;
 
         mesh_struct.updateMeshElevation(mesh_dof_handler,
                                         triangulation,
@@ -439,9 +361,10 @@ void mm_test<dim>::run(){
                                         mesh_Offset_vertices,
                                         distributed_mesh_Offset_vertices,
                                         mpi_communicator,
-                                        pcout, "iter" + std::to_string(i+2));
+                                        pcout,
+                                        "iter0");
 
-        mesh_struct.printMesh("animAfter_" + std::to_string(i+2) , my_rank, mesh_dof_handler);
+        mesh_struct.printMesh("animAfter_" + std::to_string(iter+1) , my_rank, mesh_dof_handler);
     }
 }
 

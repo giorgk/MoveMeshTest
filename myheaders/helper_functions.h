@@ -282,10 +282,19 @@ public:
 
    void assign_weights(MPI_Comm  mpi_communicator);
 
+   void clear();
+
 };
 
 template<int dim>
 RBF<dim>::RBF(){}
+
+template <int dim>
+void RBF<dim>::clear(){
+    centers.clear();
+    width.clear();
+    weights.clear();
+}
 
 template <int dim>
 double RBF<dim>::eval(Point<dim> x){
