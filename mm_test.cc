@@ -199,7 +199,7 @@ void mm_test<dim>::flag_cells_4_refinement(){
     for (; cell!=endc; ++cell){
         if (cell->is_locally_owned()){
             int r = rand() % 100 + 1;
-            if (r < 20)
+            if (r < 45)
                 cell->set_refine_flag ();
             else if (r > 95)
                 cell->set_coarsen_flag();
@@ -312,7 +312,7 @@ void mm_test<dim>::run(){
     mesh_struct.printMesh("animAfter_0", my_rank,mesh_dof_handler);
 
     RBF<dim-1> rbf;
-    for (unsigned int iter = 0; iter < 1; ++iter){
+    for (unsigned int iter = 0; iter < 10; ++iter){
         pcout << "====================== ITER: " << iter << "=============================" << std::endl;
         simulate(rbf);
         flag_cells_4_refinement();

@@ -477,7 +477,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
     set_id_above_below(my_rank);
     MPI_Barrier(mpi_communicator);
 
-    dbg_meshStructInfo3D("Test01_" + prefix + "_", my_rank);
+    //dbg_meshStructInfo3D("Test01_" + prefix + "_", my_rank);
 
 
     // in multi processor simulations more than likely there would be nodes that have as top or bottom information
@@ -495,6 +495,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
         // The following loop is executed as long as a processor has unknown nodes in its local dofs only
         // Each processor contains non local dofs but for those their information is not correct other than
         // they exists in the triangulation. However their connection information is correct
+        int dbg_cnt = 0;
         while (true){
             pcout << "--------------" << std::endl;
             Top_info.clear();
@@ -526,6 +527,11 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
             }
             if (temp_count == 0)
                 break;
+
+            if (dbg_cnt == 30){
+                std::cout << "updateMeshStruct didnt converge" << std::endl;
+                return;
+            }
 
 
             MPI_Barrier(mpi_communicator);
@@ -696,7 +702,7 @@ void Mesh_struct<dim>::updateMeshStruct(DoFHandler<dim>& mesh_dof_handler,
                     }
                 }
             }
-            dbg_meshStructInfo3D("Test02_" + prefix + "_", my_rank);
+            //dbg_meshStructInfo3D("Test02_" + prefix + "_", my_rank);
         }
     }
 
@@ -1038,8 +1044,10 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
         if (count_not_set == 0)
             break;
 
-        if (dbg_cnt == 9)
+        if (dbg_cnt == 20){
+            std::cout << "updateMeshElevation didnt converge after 20 iterations" << std::endl;
             return;
+        }
         //std::cout << "Rank " << my_rank <<" : " << count_not_set << std::endl;
 
         //copy unknown dofs from map to vector
@@ -1098,7 +1106,7 @@ void Mesh_struct<dim>::updateMeshElevation(DoFHandler<dim>& mesh_dof_handler,
     }
 
     //std::cout << " Exit while loop" << std::endl;
-    dbg_meshStructInfo3D("Test03_" + prefix + "_", my_rank);
+    //dbg_meshStructInfo3D("Test03_" + prefix + "_", my_rank);
 
 
 
