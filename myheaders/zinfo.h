@@ -170,7 +170,6 @@ Zinfo::Zinfo(double z_in, int dof_in, std::vector<int> cnstr_nodes, int istop, i
     dof = dof_in;
     add_constraint_nodes(cnstr_nodes);
 
-
     isTop = istop;
     isBot = isbot;
 

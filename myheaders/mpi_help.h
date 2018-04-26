@@ -7,6 +7,8 @@
 #include <mpi.h>
 #include "pnt_info.h"
 
+//! A method that prints the size of the input vector that my_rank processor has
+//! This is used for debuging only as it will produce alot of output
 template <typename T>
 void print_size_msg(std::vector<std::vector<T>> v, int my_rank){
     for (unsigned int i_proc = 0; i_proc < v.size(); ++i_proc){

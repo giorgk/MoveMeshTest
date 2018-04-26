@@ -312,7 +312,7 @@ void mm_test<dim>::run(){
     mesh_struct.printMesh("animAfter_0", my_rank,mesh_dof_handler);
 
     RBF<dim-1> rbf;
-    for (unsigned int iter = 0; iter < 10; ++iter){
+    for (unsigned int iter = 0; iter < 5; ++iter){
         pcout << "====================== ITER: " << iter << "=============================" << std::endl;
         simulate(rbf);
         flag_cells_4_refinement();
@@ -394,15 +394,15 @@ int main (int argc, char **argv){
     deallog.depth_console (1);
 
     //srand (time(NULL));
-    //int rr = time(NULL);
-    //std::cout << rr << std::endl;
-    //srand(rr);
+    int rr = time(NULL);
+    std::cout << rr << std::endl;
+    srand(rr);
     //srand(1517505046);
-    srand(1522316091);
+    //srand(1522316091);
     Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
     //This is going to create a box with uniform bottom at 0 and uniform top 100
-    mm_test<2> mm;
+    mm_test<3> mm;
     mm.run();
 
 
