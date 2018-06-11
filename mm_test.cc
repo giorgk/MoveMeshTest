@@ -385,7 +385,7 @@ void mm_test<dim>::do_one_random_refinement(double refine_perc, double coarse_pe
     }
 
     // first prepare the triangulation
-    triangulation.prepare_coarsening_and_refinement();
+    //triangulation.prepare_coarsening_and_refinement();
     triangulation.execute_coarsening_and_refinement();
 
 }
